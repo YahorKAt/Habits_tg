@@ -4,10 +4,19 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, update
 from . import models
 from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta
 
 
-def create_task(db: Session, user_id: int, title: str) -> models.Task:
-    task = models.Task(user_id=user_id, title=title)
+def create_task(db: Session, user_id: int, title: str, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='general') -> models.Task:
+    task = models.Task(
+        user_id=user_id, 
+        title=title,
+        repeat_type=repeat_type or models.RepeatType.NONE,
+        repeat_interval=repeat_interval,
+        next_due_date=next_due_date,
+        end_date=end_date,
+        category=category
+    )
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -20,12 +29,42 @@ def get_task(db: Session, task_id: int, user_id: int) -> Optional[models.Task]:
     ).scalar_one_or_none()
 
 
+def update_task(db: Session, task_id: int, user_id: int, title: str, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='general') -> Optional[models.Task]:
+    task = get_task(db, task_id=task_id, user_id=user_id)
+    if not task:
+        return None
+    
+    task.title = title
+    task.repeat_type = repeat_type or models.RepeatType.NONE
+    task.repeat_interval = repeat_interval
+    task.next_due_date = next_due_date
+    task.end_date = end_date
+    task.category = category
+    
+    db.commit()
+    db.refresh(task)
+    return task
+
+
 def create_subtask(db: Session, task_id: int, title: str) -> models.Subtask:
     subtask = models.Subtask(task_id=task_id, title=title)
     db.add(subtask)
     db.commit()
     db.refresh(subtask)
     return subtask
+
+
+def delete_subtask(db: Session, subtask_id: int, user_id: int) -> bool:
+    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
+    if not subtask:
+        return False
+    # Ensure subtask belongs to user's task
+    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
+    if not parent_task:
+        return False
+    db.delete(subtask)
+    db.commit()
+    return True
 
 
 def delete_task(db: Session, task_id: int, user_id: int) -> bool:
@@ -49,10 +88,40 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool)
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return None
+    
+    if completed:
+        task.last_completed_date = datetime.utcnow()
+        # Если задача повторяющаяся, обновляем следующую дату выполнения
+        if task.repeat_type != models.RepeatType.NONE:
+            task.next_due_date = calculate_next_due_date(task)
+    
     task.completed = completed
     db.commit()
     db.refresh(task)
     return task
+
+
+def calculate_next_due_date(task: models.Task) -> Optional[datetime]:
+    """Вычисляет следующую дату выполнения для повторяющейся задачи"""
+    if task.repeat_type == models.RepeatType.NONE:
+        return None
+    
+    base_date = task.last_completed_date or task.created_at
+    if not base_date:
+        return None
+    
+    if task.repeat_type == models.RepeatType.DAILY:
+        return base_date + timedelta(days=task.repeat_interval)
+    elif task.repeat_type == models.RepeatType.WEEKLY:
+        return base_date + timedelta(weeks=task.repeat_interval)
+    elif task.repeat_type == models.RepeatType.MONTHLY:
+        # Простая логика для месяцев (30 дней)
+        return base_date + timedelta(days=30 * task.repeat_interval)
+    elif task.repeat_type == models.RepeatType.CUSTOM:
+        # Для кастомного типа используем next_due_date если он задан
+        return task.next_due_date
+    
+    return None
 
 
 def set_subtask_completed(db: Session, subtask_id: int, user_id: int, completed: bool):
@@ -98,6 +167,37 @@ def get_stats(db: Session, user_id: int, period: str):
         "subtasks_completed": subtasks_completed,
         "total_completed": tasks_completed + subtasks_completed,
     }
+
+
+def create_note(db: Session, user_id: int, content: str, date: str):
+    note = models.Note(
+        user_id=user_id,
+        content=content,
+        date=date
+    )
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+def get_notes_by_date(db: Session, user_id: int, date: str):
+    return db.execute(
+        select(models.Note)
+        .where(models.Note.user_id == user_id, models.Note.date == date)
+        .order_by(models.Note.created_at.desc())
+    ).scalars().all()
+
+
+def delete_note(db: Session, note_id: int, user_id: int) -> bool:
+    note = db.execute(
+        select(models.Note).where(models.Note.id == note_id, models.Note.user_id == user_id)
+    ).scalar_one_or_none()
+    if not note:
+        return False
+    db.delete(note)
+    db.commit()
+    return True
 
 
 

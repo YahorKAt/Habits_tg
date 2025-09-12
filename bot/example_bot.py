@@ -5,7 +5,7 @@ import os
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://yaho_habits.loca.lt/")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://empty-queens-fly.loca.lt")
 
 if not BOT_TOKEN:
     print("ERROR: BOT_TOKEN environment variable is not set!")

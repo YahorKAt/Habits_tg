@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from .database import init_db, get_db
-from .schemas import TaskCreate, SubtaskCreate
+from .schemas import TaskCreate, SubtaskCreate, NoteCreate
 from . import crud
 from sqlalchemy.orm import Session
 import os
@@ -13,7 +13,7 @@ from .telegram_auth import parse_and_validate_init_data
 app = FastAPI(title="Habits Mini App API")
 
 origins = [
-    "http://localhost:5173", #"http://localhost:5173",
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://*.telegram.org",
     "https://webapp.bot",
@@ -52,7 +52,34 @@ def health() -> JSONResponse:
 
 @app.post("/task")
 def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    task = crud.create_task(db, user_id=user_id, title=payload.title)
+    task = crud.create_task(
+        db, 
+        user_id=user_id, 
+        title=payload.title,
+        repeat_type=payload.repeat_type,
+        repeat_interval=payload.repeat_interval,
+        next_due_date=payload.next_due_date,
+        end_date=payload.end_date,
+        category=payload.category
+    )
+    return task
+
+
+@app.put("/task/{task_id}")
+def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    task = crud.update_task(
+        db, 
+        task_id=task_id,
+        user_id=user_id, 
+        title=payload.title,
+        repeat_type=payload.repeat_type,
+        repeat_interval=payload.repeat_interval,
+        next_due_date=payload.next_due_date,
+        end_date=payload.end_date,
+        category=payload.category
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
     return task
 
 
@@ -63,6 +90,14 @@ def add_subtask(payload: SubtaskCreate, db: Session = Depends(get_db), user_id: 
         raise HTTPException(status_code=404, detail="Task not found")
     subtask = crud.create_subtask(db, task_id=payload.task_id, title=payload.title)
     return subtask
+
+
+@app.delete("/subtask/{subtask_id}")
+def delete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    deleted = crud.delete_subtask(db, subtask_id=subtask_id, user_id=user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    return {"ok": True}
 
 
 @app.delete("/task/{task_id}")
@@ -99,6 +134,30 @@ def stats(period: str, db: Session = Depends(get_db), user_id: int = Depends(get
     if period not in {"7", "30", "all"}:
         raise HTTPException(status_code=400, detail="Invalid period")
     return crud.get_stats(db, user_id=user_id, period=period)
+
+
+@app.post("/notes")
+def add_note(payload: NoteCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    note = crud.create_note(
+        db, 
+        user_id=user_id, 
+        content=payload.content,
+        date=payload.date
+    )
+    return note
+
+
+@app.get("/notes")
+def list_notes(date: str, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    return crud.get_notes_by_date(db, user_id=user_id, date=date)
+
+
+@app.delete("/notes/{note_id}")
+def delete_note(note_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    deleted = crud.delete_note(db, note_id=note_id, user_id=user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"ok": True}
 
 
 
