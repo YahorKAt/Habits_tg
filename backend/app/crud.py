@@ -7,15 +7,17 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
 
-def create_task(db: Session, user_id: int, title: str, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='general') -> models.Task:
+def create_task(db: Session, user_id: int, title: str, description=None, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
     task = models.Task(
         user_id=user_id, 
         title=title,
+        description=description,
         repeat_type=repeat_type or models.RepeatType.NONE,
         repeat_interval=repeat_interval,
         next_due_date=next_due_date,
         end_date=end_date,
-        category=category
+        category=category,
+        frequency=frequency
     )
     db.add(task)
     db.commit()
@@ -29,17 +31,19 @@ def get_task(db: Session, task_id: int, user_id: int) -> Optional[models.Task]:
     ).scalar_one_or_none()
 
 
-def update_task(db: Session, task_id: int, user_id: int, title: str, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='general') -> Optional[models.Task]:
+def update_task(db: Session, task_id: int, user_id: int, title: str, description=None, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> Optional[models.Task]:
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return None
     
     task.title = title
+    task.description = description
     task.repeat_type = repeat_type or models.RepeatType.NONE
     task.repeat_interval = repeat_interval
     task.next_due_date = next_due_date
     task.end_date = end_date
     task.category = category
+    task.frequency = frequency
     
     db.commit()
     db.refresh(task)
@@ -169,11 +173,12 @@ def get_stats(db: Session, user_id: int, period: str):
     }
 
 
-def create_note(db: Session, user_id: int, content: str, date: str):
+def create_note(db: Session, user_id: int, content: str, date: str, mood: str = None):
     note = models.Note(
         user_id=user_id,
         content=content,
-        date=date
+        date=date,
+        mood=mood
     )
     db.add(note)
     db.commit()

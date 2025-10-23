@@ -7,19 +7,100 @@
 }
 
 body {
-  @apply bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+  @apply bg-gray-50 text-gray-900;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .card {
-  @apply bg-white dark:bg-gray-800 rounded-xl shadow p-4;
+  @apply bg-white rounded-2xl shadow-sm p-4 border border-gray-100;
 }
 
 .btn {
-  @apply inline-flex items-center justify-center rounded-lg px-3 py-2 font-medium transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50;
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition-colors bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50;
 }
 
 .input {
-  @apply w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500;
+  @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+}
+
+.tab-active {
+  @apply bg-gray-900 text-white;
+}
+
+.tab-inactive {
+  @apply bg-gray-100 text-gray-600;
+}
+
+.category-card {
+  @apply bg-white rounded-xl border-2 border-gray-100 p-4 cursor-pointer transition-all hover:border-gray-200;
+}
+
+.category-card.selected {
+  @apply border-gray-900;
+}
+
+.frequency-option {
+  @apply bg-white rounded-xl border border-gray-200 p-4 cursor-pointer transition-all hover:border-gray-300;
+}
+
+.frequency-option.selected {
+  @apply border-gray-900 bg-gray-50;
+}
+
+.task-card {
+  @apply bg-white rounded-xl shadow-sm p-4 border border-gray-100;
+}
+
+.habit-item {
+  @apply flex items-center gap-3 p-3 bg-white rounded-xl;
+}
+
+.streak-dots {
+  @apply flex gap-1;
+}
+
+.streak-dot {
+  @apply w-2 h-2 rounded-full;
+}
+
+.streak-dot.active {
+  @apply bg-orange-500;
+}
+
+.streak-dot.inactive {
+  @apply bg-gray-200;
+}
+
+.calendar-day {
+  @apply w-8 h-8 flex items-center justify-center text-sm rounded-lg cursor-pointer hover:bg-gray-100;
+}
+
+.calendar-day.selected {
+  @apply bg-gray-900 text-white;
+}
+
+.calendar-day.today {
+  @apply bg-blue-500 text-white;
+}
+
+.nav-item {
+  @apply flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-colors;
+}
+
+.nav-item.active {
+  @apply text-gray-900;
+}
+
+.nav-item.inactive {
+  @apply text-gray-400;
+}
+
+.floating-btn {
+  @apply fixed bottom-20 right-4 w-14 h-14 bg-gray-900 text-white rounded-full shadow-lg flex items-center justify-center text-xl hover:bg-gray-800 transition-colors;
 }
 
 

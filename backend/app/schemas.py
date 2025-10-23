@@ -8,11 +8,13 @@ from .models import RepeatType
 
 class TaskCreate(BaseModel):
     title: str
+    description: Optional[str] = None
     repeat_type: RepeatType = RepeatType.NONE
     repeat_interval: int = 1
     next_due_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    category: str = 'general'
+    category: str = 'personal'
+    frequency: str = 'daily'
 
 
 class SubtaskCreate(BaseModel):
@@ -35,6 +37,7 @@ class TaskOut(BaseModel):
     id: int
     user_id: int
     title: str
+    description: Optional[str]
     created_at: datetime
     completed: bool
     repeat_type: RepeatType
@@ -43,6 +46,7 @@ class TaskOut(BaseModel):
     end_date: Optional[datetime]
     last_completed_date: Optional[datetime]
     category: str
+    frequency: str
     subtasks: List[SubtaskOut] = []
 
     class Config:
@@ -59,6 +63,7 @@ class StatsOut(BaseModel):
 class NoteCreate(BaseModel):
     content: str
     date: str  # YYYY-MM-DD
+    mood: Optional[str] = None  # Эмоджи настроения
 
 
 class NoteOut(BaseModel):
@@ -66,6 +71,7 @@ class NoteOut(BaseModel):
     user_id: int
     content: str
     date: str
+    mood: Optional[str]
     created_at: datetime
 
     class Config:

@@ -56,11 +56,13 @@ def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = 
         db, 
         user_id=user_id, 
         title=payload.title,
+        description=payload.description,
         repeat_type=payload.repeat_type,
         repeat_interval=payload.repeat_interval,
         next_due_date=payload.next_due_date,
         end_date=payload.end_date,
-        category=payload.category
+        category=payload.category,
+        frequency=payload.frequency
     )
     return task
 
@@ -72,11 +74,13 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
         task_id=task_id,
         user_id=user_id, 
         title=payload.title,
+        description=payload.description,
         repeat_type=payload.repeat_type,
         repeat_interval=payload.repeat_interval,
         next_due_date=payload.next_due_date,
         end_date=payload.end_date,
-        category=payload.category
+        category=payload.category,
+        frequency=payload.frequency
     )
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -142,7 +146,8 @@ def add_note(payload: NoteCreate, db: Session = Depends(get_db), user_id: int = 
         db, 
         user_id=user_id, 
         content=payload.content,
-        date=payload.date
+        date=payload.date,
+        mood=payload.mood
     )
     return note
 

@@ -1,37 +1,97 @@
 # Habits Telegram Mini App
 
-Full-stack Telegram Mini App for tasks & subtasks with stats and recurring tasks support.
+Full-stack Telegram Mini App for habit tracking with modern UI design, statistics, and journal features.
 
 ## Features
 
-- ✅ **Tasks & Subtasks Management** - Create, complete, and delete tasks with subtasks
-- ✅ **Recurring Tasks** - Set daily, weekly, monthly, or custom schedules
-- ✅ **Dedicated Creation Page** - Full-featured form for task creation with all options
-- ✅ **Statistics** - Track completion rates for 7 days, 30 days, or all time
+- ✅ **Modern UI Design** - Clean, intuitive interface matching Telegram design guidelines
+- ✅ **Habit Tracking** - Create and track daily, weekly, and monthly habits
+- ✅ **Statistics Dashboard** - Visual charts and progress tracking with calendar view
+- ✅ **Journal System** - Daily notes and reflections with calendar navigation
+- ✅ **Category System** - Organize habits by Sport, Study, Work, and Personal
+- ✅ **Streak Tracking** - Visual streak indicators and completion rates
 - ✅ **Telegram WebApp Integration** - Native Telegram client experience
-- ✅ **Responsive UI** - Modern interface with Tailwind CSS
+- ✅ **Responsive Design** - Optimized for mobile devices
 
 ## Interface Structure
 
-### Main Page (Tasks)
-- List of all tasks with completion status
-- Button "Добавить задачу" to open creation page
-- Quick subtask addition to existing tasks
+### Tasks Page
+- **Filter Tabs** - All, Active, Completed tasks
+- **Habit Cards** - Each habit shows category, frequency, and streak
+- **Floating Action Button** - Quick access to create new habits
+- **Category Icons** - Visual indicators for Sport 🏆, Study 🎓, Work 💼, Personal 👤
 
-### Task Creation Page
-- **Task Title** - Required field for task name
-- **Repeat Type** - NONE, DAILY, WEEKLY, MONTHLY, CUSTOM
-- **Interval** - Every N days/weeks/months
-- **Custom Date** - Specific date/time for custom schedule
-- **End Date** - Optional end date for recurring tasks
-- **Subtasks** - Add multiple subtasks before creating
-- **Navigation** - Back button and Create button
+### Create Task Page
+- **Task Title** - Required field for habit name
+- **Description** - Optional detailed description
+- **Category Selection** - Visual category cards with icons
+- **Frequency Options** - Daily, Weekly, Monthly with descriptions
+- **Preview Section** - Shows how the habit will look
+- **Modern Form Design** - Clean, intuitive interface
 
 ### Statistics Page
-- Completion rates for different time periods
-- Visual representation of progress
+- **Activity Chart** - Pie chart showing completion rates
+- **Schedule Calendar** - Weekly view with completion indicators
+- **Summary Cards** - Completion percentage and streak days
+- **Habit Streaks** - Visual dot indicators for each habit
 
-## Quick Start (Windows)
+### Journal Page
+- **Monthly Calendar** - Navigate between months
+- **Daily Notes** - Add and view notes for specific dates
+- **Mood Selection** - Choose from 12 different mood emojis
+- **Time Stamps** - Each note shows creation time
+- **Mood Display** - Visual mood indicators for each note
+
+### Habit Categories
+- **Sport** 🏆 - Physical activities and fitness
+- **Study** 🎓 - Learning and education
+- **Work** 💼 - Professional tasks and projects
+- **Personal** 👤 - Personal development and self-care
+
+### Frequency Options
+- **Daily** - Every day habit tracking
+- **Weekly** - Weekly habit completion
+- **Monthly** - Monthly goal achievement
+
+### How It Works
+1. Navigate to Tasks page
+2. Click floating "+" button to create new habit
+3. Fill in habit title and optional description
+4. Select category with visual cards
+5. Choose frequency (daily/weekly/monthly)
+6. Preview your habit before creating
+7. Track completion and view streaks
+8. Monitor progress in Statistics page
+9. Add daily reflections in Journal page
+
+### UI Components
+- **Modern Cards** - Clean, rounded design with shadows
+- **Visual Categories** - Icon-based category selection
+- **Streak Indicators** - Dot-based streak visualization
+- **Charts** - Pie charts for completion statistics
+- **Calendar Views** - Monthly and weekly calendar navigation
+- **Bottom Navigation** - Easy switching between main sections
+
+## Environment Variables
+
+- `DEV_MODE=true`: Enables development mode (skips strict auth)
+- `DEV_USER_ID=1`: User ID for development mode
+- `BOT_TOKEN`: Your Telegram bot token
+- `WEBAPP_URL`: URL where your frontend is hosted
+
+## Notes
+- Uses Telegram WebApp API for auth via `X-Telegram-Init-Data` header
+- Designed to work inside Telegram client WebView
+- Backend runs on port 8000, frontend on port 5173
+- SQLite database with automatic migration support
+- Clean separation between task list and creation interface
+- Enum values use uppercase (NONE, DAILY, WEEKLY, MONTHLY, CUSTOM)
+
+
+
+
+
+### Quick Start (Windows)
 
 ### 1. Backend
 ```bash
@@ -40,12 +100,9 @@ run_backend.bat
 
 # Option 2: Manual setup
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
+python -m venv .venv && .venv\\Scripts\\activate
 pip install -r requirements.txt
-set DEV_MODE=true
-set DEV_USER_ID=1
-set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ
+set DEV_MODE=true && set DEV_USER_ID=1 && set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ1
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -80,43 +137,5 @@ run_bot.bat
 cd bot
 pip install -r requirements.txt
 set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ
-set WEBAPP_URL=https://cuddly-clocks-play.loca.lt
+set WEBAPP_URL=https://honest-carpets-grow.loca.lt
 python example_bot.py
-```
-
-## New Features: Recurring Tasks
-
-### Task Types
-- **NONE** - One-time task
-- **DAILY** - Every N days
-- **WEEKLY** - Every N weeks  
-- **MONTHLY** - Every N months
-- **CUSTOM** - Specific date/time
-
-### How It Works
-1. Click "Добавить задачу" button
-2. Fill in task title and select repeat type
-3. Set interval (every 1, 2, 3... days/weeks/months)
-4. Optionally set end date
-5. Add subtasks if needed
-6. Click "Создать задачу"
-7. When completed, next due date is automatically calculated
-8. Tasks can be completed multiple times
-
-## Environment Variables
-
-- `DEV_MODE=true`: Enables development mode (skips strict auth)
-- `DEV_USER_ID=1`: User ID for development mode
-- `BOT_TOKEN`: Your Telegram bot token
-- `WEBAPP_URL`: URL where your frontend is hosted
-
-## Notes
-- Uses Telegram WebApp API for auth via `X-Telegram-Init-Data` header
-- Designed to work inside Telegram client WebView
-- Backend runs on port 8000, frontend on port 5173
-- SQLite database with automatic migration support
-- Clean separation between task list and creation interface
-- Enum values use uppercase (NONE, DAILY, WEEKLY, MONTHLY, CUSTOM)
-
-
-
