@@ -20,6 +20,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, index=True, nullable=False)
     title = Column(String(255), nullable=False)
+    description = Column(String(1000), nullable=True)  # Описание задачи
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed = Column(Boolean, default=False, nullable=False)
     

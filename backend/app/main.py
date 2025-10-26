@@ -77,19 +77,25 @@ def health() -> JSONResponse:
 
 @app.post("/task")
 def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    task = crud.create_task(
-        db, 
-        user_id=user_id, 
-        title=payload.title,
-        description=payload.description,
-        repeat_type=payload.repeat_type,
-        repeat_interval=payload.repeat_interval,
-        next_due_date=payload.next_due_date,
-        end_date=payload.end_date,
-        category=payload.category,
-        frequency=payload.frequency
-    )
-    return task
+    try:
+        logger.info(f"Creating task: title={payload.title}, category={payload.category}, frequency={payload.frequency}")
+        task = crud.create_task(
+            db, 
+            user_id=user_id, 
+            title=payload.title,
+            description=payload.description,
+            repeat_type=payload.repeat_type,
+            repeat_interval=payload.repeat_interval,
+            next_due_date=payload.next_due_date,
+            end_date=payload.end_date,
+            category=payload.category,
+            frequency=payload.frequency
+        )
+        logger.info(f"Task created successfully with id={task.id}")
+        return task
+    except Exception as e:
+        logger.error(f"Error creating task: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 
 @app.put("/task/{task_id}")

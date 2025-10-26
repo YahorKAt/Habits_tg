@@ -71,20 +71,27 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
 
     setLoading(true)
     try {
+      const taskData = {
+        title: title.trim(),
+        category: category,
+        frequency: frequency,
+      }
+
+      // Добавляем description только если оно не пустое
+      if (description && description.trim()) {
+        taskData.description = description.trim()
+      }
+
+      console.log('Creating task with data:', taskData)
       await api('/task', {
         method: 'POST',
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          category: category,
-          frequency: frequency,
-        })
+        body: JSON.stringify(taskData)
       })
 
       onTaskCreated()
     } catch (error) {
       console.error('Error creating task:', error)
-      alert('Ошибка при создании задачи')
+      alert('Ошибка при создании задачи: ' + error.message)
     } finally {
       setLoading(false)
     }
