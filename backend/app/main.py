@@ -6,17 +6,20 @@ from .schemas import TaskCreate, SubtaskCreate, NoteCreate
 from . import crud
 from sqlalchemy.orm import Session
 import os
+import logging
 
 from .telegram_auth import parse_and_validate_init_data
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Habits Mini App API")
 
 origins = [
-    # "http://localhost:5173",
-    # "http://127.0.0.1:5173",
-    # "https://*.telegram.org",
-    # "https://webapp.bot",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://habits-tg.vercel.app",
 ]
 
@@ -25,7 +28,8 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 
@@ -37,12 +41,29 @@ def on_startup() -> None:
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
     if dev_mode:
+        logger.info("Running in DEV_MODE")
         return int(os.getenv("DEV_USER_ID", "1"))
+    
     if not x_telegram_init_data:
-        raise HTTPException(status_code=401, detail="Missing Telegram init data")
+        logger.warning("Missing Telegram init data header")
+        raise HTTPException(
+            status_code=401, 
+            detail="Missing Telegram init data",
+            headers={"WWW-Authenticate": "Telegram"}
+        )
+    
+    logger.info(f"Received init data (length: {len(x_telegram_init_data)})")
     user = parse_and_validate_init_data(x_telegram_init_data)
+    
     if not user or "id" not in user:
-        raise HTTPException(status_code=401, detail="Invalid Telegram auth")
+        logger.warning("Invalid Telegram auth - user not found or missing id")
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid Telegram auth",
+            headers={"WWW-Authenticate": "Telegram"}
+        )
+    
+    logger.info(f"Authenticated user ID: {user['id']}")
     return int(user["id"])  # type: ignore
 
 @app.get("/")

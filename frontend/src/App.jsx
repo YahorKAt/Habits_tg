@@ -29,7 +29,7 @@ function useTelegram() {
 
 function useInitData() {
   const tg = useTelegram()
-  const initData = tg?.initData || ''
+  const initData = tg?.initData || tg?.initDataUnsafe || ''
   return initData
 }
 
@@ -43,15 +43,26 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
   const [loading, setLoading] = useState(false)
 
   async function api(path, options = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+
+    // Add Telegram auth header only if we have initData
+    if (initData) {
+      headers['X-Telegram-Init-Data'] = initData
+    }
+
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        ...(options.headers || {})
-      }
+      headers
     })
-    if (!res.ok) throw new Error(await res.text())
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error(`API Error (${res.status}):`, errorText)
+      throw new Error(errorText || `Request failed with status ${res.status}`)
+    }
     return await res.json()
   }
 
@@ -209,15 +220,26 @@ function TasksPage({ onCreateTask }) {
   const [loading, setLoading] = useState(false)
 
   async function api(path, options = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+
+    // Add Telegram auth header only if we have initData
+    if (initData) {
+      headers['X-Telegram-Init-Data'] = initData
+    }
+
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        ...(options.headers || {})
-      }
+      headers
     })
-    if (!res.ok) throw new Error(await res.text())
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error(`API Error (${res.status}):`, errorText)
+      throw new Error(errorText || `Request failed with status ${res.status}`)
+    }
     return await res.json()
   }
 
@@ -381,10 +403,18 @@ function StatisticsPage() {
   const [loading, setLoading] = useState(false)
 
   async function api(path) {
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: { 'X-Telegram-Init-Data': initData }
-    })
-    if (!res.ok) throw new Error(await res.text())
+    const headers = {}
+    if (initData) {
+      headers['X-Telegram-Init-Data'] = initData
+    }
+
+    const res = await fetch(`${API_URL}${path}`, { headers })
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error(`API Error (${res.status}):`, errorText)
+      throw new Error(errorText || `Request failed with status ${res.status}`)
+    }
     return await res.json()
   }
 
@@ -575,15 +605,26 @@ function JournalPage() {
   ]
 
   async function api(path, options = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+
+    // Add Telegram auth header only if we have initData
+    if (initData) {
+      headers['X-Telegram-Init-Data'] = initData
+    }
+
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        ...(options.headers || {})
-      }
+      headers
     })
-    if (!res.ok) throw new Error(await res.text())
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      console.error(`API Error (${res.status}):`, errorText)
+      throw new Error(errorText || `Request failed with status ${res.status}`)
+    }
     return await res.json()
   }
 
