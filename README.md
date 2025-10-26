@@ -137,5 +137,5 @@ run_bot.bat
 cd bot
 pip install -r requirements.txt
 set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ
-set WEBAPP_URL=https://honest-carpets-grow.loca.lt
+set WEBAPP_URL=https://habits-tg.vercel.app/
 python example_bot.py

@@ -3,7 +3,10 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { format, startOfWeek, addDays, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+const API_URL = import.meta.env.VITE_API_URL || 'https://habits-tg.vercel.app/' //'http://localhost:8000'
+// const API_URL = "https://habits-backend.onrender.com";
+
 
 // Константы для категорий задач
 const TASK_CATEGORIES = {

@@ -17,6 +17,7 @@ origins = [
     "http://127.0.0.1:5173",
     "https://*.telegram.org",
     "https://webapp.bot",
+    "https://habits-tg.vercel.app/",
 ]
 
 app.add_middleware(
