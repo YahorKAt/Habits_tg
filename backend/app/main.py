@@ -45,6 +45,9 @@ def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
         raise HTTPException(status_code=401, detail="Invalid Telegram auth")
     return int(user["id"])  # type: ignore
 
+@app.get("/")
+def root():
+    return JSONResponse({"status": "ok", "message": "Backend running"})
 
 @app.get("/health")
 def health() -> JSONResponse:
