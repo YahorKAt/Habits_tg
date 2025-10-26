@@ -13,16 +13,16 @@ from .telegram_auth import parse_and_validate_init_data
 app = FastAPI(title="Habits Mini App API")
 
 origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://*.telegram.org",
-    "https://webapp.bot",
-    "https://habits-tg.vercel.app/",
+    # "http://localhost:5173",
+    # "http://127.0.0.1:5173",
+    # "https://*.telegram.org",
+    # "https://webapp.bot",
+    "https://habits-tg.vercel.app",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]

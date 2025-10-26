@@ -4,7 +4,7 @@ import { format, startOfWeek, addDays, isSameDay, isToday, startOfMonth, endOfMo
 import { ru } from 'date-fns/locale'
 
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://habits-tg.vercel.app/' //'http://localhost:8000'
+const API_URL = import.meta.env.VITE_API_URL || 'https://habits-tg.onrender.com' //'http://localhost:8000'
 // const API_URL = "https://habits-backend.onrender.com";
 
 
