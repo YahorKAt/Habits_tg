@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils import executor
@@ -30,6 +31,7 @@ async def start(message: types.Message):
 
 if __name__ == "__main__":
     print("Starting bot...")
+    asyncio.set_event_loop(asyncio.new_event_loop())
     executor.start_polling(dp)
 
 
