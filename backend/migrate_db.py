@@ -7,6 +7,7 @@ import sqlite3
 import os
 import sys
 
+
 def migrate_db():
     db_path = "backend/habits.db"
     # Determine the correct path to the database
