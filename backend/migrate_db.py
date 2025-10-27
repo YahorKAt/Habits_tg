@@ -15,8 +15,7 @@ def migrate_db():
     db_path = os.path.join(script_dir, "habits.db")
 
     if not os.path.exists(db_path):
-        print("❌ База данных не найдена")
-        print(f"[ERROR] Database not found at path: {db_path}")
+        print(f"❌ База данных не найдена: {db_path}")
         return False
 
     conn = sqlite3.connect(db_path)
@@ -64,7 +63,6 @@ def migrate_db():
 
 if __name__ == "__main__":
     print("🔍 Миграция базы данных...")
-    migrate_db()
     success = migrate_db()
     if success:
         print("\n[OK] Migration completed successfully!")

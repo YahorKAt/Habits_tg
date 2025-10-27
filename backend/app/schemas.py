@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 from .models import RepeatType
@@ -29,8 +29,7 @@ class SubtaskOut(BaseModel):
     created_at: datetime
     completed: bool
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskOut(BaseModel):
@@ -49,8 +48,7 @@ class TaskOut(BaseModel):
     frequency: str
     subtasks: List[SubtaskOut] = []
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class StatsOut(BaseModel):
@@ -74,8 +72,7 @@ class NoteOut(BaseModel):
     mood: Optional[str]
     created_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 
