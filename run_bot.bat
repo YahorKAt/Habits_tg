@@ -1,8 +1,18 @@
 @echo off
-echo Setting up environment variables...
-set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ
-set WEBAPP_URL=https://tame-files-boil.local.lt
-
-echo Starting bot...
 cd bot
+
+if not exist .venv (
+    echo Creating virtual environment...
+    python -m venv .venv
+)
+
+call .venv\Scripts\activate
+
+echo Installing requirements...
+pip install -r requirements.txt >nul
+
+REM --- Load .env variables automatically ---
+for /f "tokens=1,2 delims==" %%a in (..\ .env) do set %%a=%%b
+
+echo Starting Telegram bot...
 python example_bot.py

@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 
 
 def create_task(db: Session, user_id: int, title: str, description=None, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
+    # Преобразуем пустую строку в None для description
+    if description is not None and description.strip() == '':
+        description = None
+    
     task = models.Task(
         user_id=user_id, 
         title=title,

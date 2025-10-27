@@ -20,6 +20,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, index=True, nullable=False)
     title = Column(String(255), nullable=False)
+    description = Column(String(1000), nullable=True)  # Описание задачи
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed = Column(Boolean, default=False, nullable=False)
     
@@ -32,6 +33,9 @@ class Task(Base):
     
     # Поле для группы задачи
     category = Column(String(50), default='general', nullable=False)  # general, sport, study, work, etc.
+
+    # Поле для частоты выполнения
+    frequency = Column(String(20), default='daily', nullable=False)  # daily, weekly, monthly
 
     subtasks = relationship("Subtask", cascade="all, delete-orphan", back_populates="task")
 
@@ -55,6 +59,7 @@ class Note(Base):
     user_id = Column(Integer, index=True, nullable=False)
     content = Column(String(1000), nullable=False)  # Текст заметки
     date = Column(String(10), nullable=False)  # Дата в формате YYYY-MM-DD
+    mood = Column(String(10), nullable=True)  # Эмоджи настроения
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

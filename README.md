@@ -102,7 +102,9 @@ run_backend.bat
 cd backend
 python -m venv .venv && .venv\\Scripts\\activate
 pip install -r requirements.txt
-set DEV_MODE=true && set DEV_USER_ID=1 && set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ1
+set DEV_MODE=true 
+set DEV_USER_ID=1
+set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ1
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -137,5 +139,5 @@ run_bot.bat
 cd bot
 pip install -r requirements.txt
 set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ
-set WEBAPP_URL=https://honest-carpets-grow.loca.lt
+set WEBAPP_URL= https://fresh-hairs-judge.loca.lt
 python example_bot.py

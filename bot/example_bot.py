@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.utils import executor
@@ -5,7 +7,7 @@ import os
 
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://empty-queens-fly.loca.lt")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
 
 if not BOT_TOKEN:
     print("ERROR: BOT_TOKEN environment variable is not set!")
