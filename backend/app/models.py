@@ -33,6 +33,9 @@ class Task(Base):
     
     # Поле для группы задачи
     category = Column(String(50), default='general', nullable=False)  # general, sport, study, work, etc.
+    
+    # Поле для частоты выполнения
+    frequency = Column(String(20), default='daily', nullable=False)  # daily, weekly, monthly
 
     # Поле для частоты выполнения
     frequency = Column(String(20), default='daily', nullable=False)  # daily, weekly, monthly

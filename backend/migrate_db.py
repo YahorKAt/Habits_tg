@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Скрипт для миграции базы данных - добавление поля mood в таблицу notes
+Database migration script
 """
 
 import sqlite3
@@ -29,7 +30,7 @@ def migrate_db():
 
         if 'mood' not in columns:
             cursor.execute("ALTER TABLE notes ADD COLUMN mood VARCHAR(10)")
-            print("✅ Добавлено поле 'mood' в таблицу notes")
+            print("[OK] Added 'mood' field to notes table")
         else:
             print("✅ Поле 'mood' уже существует в notes")
 
@@ -51,11 +52,11 @@ def migrate_db():
             print("✅ Поле 'description' уже существует в tasks")
 
         conn.commit()
-        print("🎉 Миграция завершена успешно!")
+        print("[OK] Migration completed successfully!")
         return True
 
     except Exception as e:
-        print(f"❌ Ошибка при миграции: {e}")
+        print(f"[ERROR] Migration error: {e}")
         conn.rollback()
         return False
     finally:
