@@ -21,12 +21,18 @@ const FREQUENCY_OPTIONS = [
 
 function useTelegram() {
   const tg = window.Telegram?.WebApp
+  if (tg.initData) {
+    console.log("Telegram initData found")
+  } else {
+    console.log("No Telegram data detected")
+  }
   return tg
 }
 
 function useInitData() {
   const tg = useTelegram()
   const initData = tg?.initData || ''
+  console.log("это данные пользователя initData =", initData)
   return initData
 }
 
