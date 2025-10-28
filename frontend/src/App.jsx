@@ -54,6 +54,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
         ...(options.headers || {})
       }
     })
+    console.log("это данные пользователя при создании задачи =", initData)
     if (!res.ok) throw new Error(await res.text())
     return await res.json()
   }
