@@ -30,7 +30,7 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
     computed_hash = hmac.new(secret_key, check_data.encode(), hashlib.sha256).hexdigest()
     if computed_hash != hash_value:
         #return None
-        return print('Несовпадение hash')
+        return print(f'Несовпадение hash!!! {computed_hash} != {hash_value} ')
 
     # Extract user JSON
     import json
