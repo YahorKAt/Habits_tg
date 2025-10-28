@@ -1,12 +1,10 @@
 [build]
-# Путь до зависимостей
-builder = "python"
+# Команда для установки зависимостей
 buildCommand = "pip install -r bot/requirements.txt"
 
 [start]
-# Команда для запуска твоего бота
+# Команда для запуска бота
 startCommand = "python bot/example_bot.py"
 
 [env]
-# Здесь можно указать переменные окружения
 PYTHON_VERSION = "3.11"
