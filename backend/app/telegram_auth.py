@@ -17,28 +17,33 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
 
     hash_value = data.pop("hash", None)
     if not hash_value:
-        return None
+        #return None
+        return print('Не нашёл hash')
 
     bot_token = os.getenv("BOT_TOKEN", "")
     if not bot_token:
-        return None
+        #return None
+        return print('Не нашёл bot_token')
 
     check_data = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
     secret_key = hashlib.sha256(bot_token.encode()).digest()
     computed_hash = hmac.new(secret_key, check_data.encode(), hashlib.sha256).hexdigest()
     if computed_hash != hash_value:
-        return None
+        #return None
+        return print('Несовпадение hash')
 
     # Extract user JSON
     import json
 
     user_raw = data.get("user")
     if not user_raw:
-        return None
+        #return None
+        return print('Не нашёл user_row')
     try:
         return json.loads(user_raw)
     except Exception:
-        return None
+        #return None
+        return print('Ошибка хз какая')
 
 
 

@@ -46,13 +46,11 @@ def on_startup() -> None:
 
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
     print("🔹 X-Telegram-Init-Data received:", x_telegram_init_data)
-    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
-    if dev_mode:
-        return int(os.getenv("DEV_USER_ID", "1"))
     if not x_telegram_init_data:
         raise HTTPException(status_code=401, detail="Missing Telegram init data")
     user = parse_and_validate_init_data(x_telegram_init_data)
     if not user or "id" not in user:
+        print("Не нашёл данных X-Telegram-Init-Data received:", x_telegram_init_data)
         raise HTTPException(status_code=401, detail="Invalid Telegram auth")
     return int(user["id"])  # type: ignore
 

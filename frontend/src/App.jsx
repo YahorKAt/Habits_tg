@@ -32,7 +32,6 @@ function useTelegram() {
 function useInitData() {
   const tg = useTelegram()
   const initData = tg?.initData || ''
-  console.log("это данные пользователя при входе initData =", initData)
   return initData
 }
 
