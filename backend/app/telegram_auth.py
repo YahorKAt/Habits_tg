@@ -9,7 +9,6 @@ from typing import Dict, Any, Optional
 
 
 def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
-    print("AUTH_TELEGRAM = init_data_raw", init_data_raw)
     # According to Telegram WebApp auth docs
     # init_data is URL-encoded key=value pairs joined by '&'
     data = urllib.parse.parse_qs(init_data_raw, keep_blank_values=True)

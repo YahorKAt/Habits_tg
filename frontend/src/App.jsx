@@ -23,6 +23,7 @@ function useTelegram() {
   const tg = window.Telegram?.WebApp
   if (tg.initData) {
     console.log("Telegram initData found")
+    console.log("initData =:", window.Telegram.WebApp.initData)
   } else {
     console.log("No Telegram data detected")
   }
@@ -38,7 +39,6 @@ function useInitData() {
 // Компонент для создания новой задачи
 function CreateTaskPage({ onBack, onTaskCreated }) {
   const initData = useInitData()
-  console.log("initData перед запросом:", initData)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('personal')
@@ -206,7 +206,6 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
 // Компонент для страницы задач
 function TasksPage({ onCreateTask }) {
   const initData = useInitData()
-  console.log("initData перед запросом:", initData)
   const [tasks, setTasks] = useState([])
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(false)
@@ -379,7 +378,6 @@ function TasksPage({ onCreateTask }) {
 // Компонент для страницы статистики
 function StatisticsPage() {
   const initData = useInitData()
-  console.log("initData перед запросом:", initData)
   const [period, setPeriod] = useState('week')
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -562,7 +560,6 @@ function StatisticsPage() {
 // Компонент для страницы журнала
 function JournalPage() {
   const initData = useInitData()
-  console.log("initData перед запросом:", initData)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(false)
