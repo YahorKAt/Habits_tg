@@ -44,7 +44,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
   const [category, setCategory] = useState('personal')
   const [frequency, setFrequency] = useState('daily')
   const [loading, setLoading] = useState(false)
-
+  console.log("12345!!!это данные пользователя при создании задачи =", initData)
   async function api(path, options = {}) {
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
@@ -54,7 +54,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
         ...(options.headers || {})
       }
     })
-    console.log("это данные пользователя при создании задачи =", initData)
+    console.log("!!!!!это данные пользователя при создании задачи =", initData)
     if (!res.ok) throw new Error(await res.text())
     return await res.json()
   }
