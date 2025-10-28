@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 
 
 def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
-    print("init_data_raw", init_data_raw)
+    print("AUTH_TELEGRAM = init_data_raw", init_data_raw)
     # According to Telegram WebApp auth docs
     # init_data is URL-encoded key=value pairs joined by '&'
     data = urllib.parse.parse_qs(init_data_raw, keep_blank_values=True)
@@ -21,14 +21,16 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         return print('Не нашёл hash')
 
     bot_token = os.getenv("BOT_TOKEN", "")
-    print(f'BOT_TOKEN = {bot_token}')
     if not bot_token:
         #return None
         return print('Не нашёл bot_token')
 
     check_data = "\n".join(f"{k}={data[k]}" for k in sorted(data.keys()))
+    print(f"check=data= {check_data}")
     secret_key = hashlib.sha256(bot_token.encode()).digest()
+    print(f"secret_key= {secret_key}")
     computed_hash = hmac.new(secret_key, check_data.encode(), hashlib.sha256).hexdigest()
+    print(f"computed_hash= {computed_hash}")
     if computed_hash != hash_value:
         #return None
         return print(f'Несовпадение hash!!! {computed_hash} != {hash_value} ')
