@@ -45,6 +45,7 @@ def on_startup() -> None:
 
 
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
+    print("🔹 X-Telegram-Init-Data received:", x_telegram_init_data)
     dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
     if dev_mode:
         return int(os.getenv("DEV_USER_ID", "1"))
