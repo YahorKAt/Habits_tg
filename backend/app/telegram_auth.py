@@ -21,6 +21,7 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         return print('Не нашёл hash')
 
     bot_token = os.getenv("BOT_TOKEN", "")
+    print(f'BOT_TOKEN = {bot_token}')
     if not bot_token:
         #return None
         return print('Не нашёл bot_token')
