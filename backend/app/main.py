@@ -22,12 +22,9 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Habits Mini App API")
 
 origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    "https://habits-tg.vercel.app",  # ваш домен Vercel
     "https://*.telegram.org",
     "https://t.me",
-    "https://webapp.bot",
-    "https://habits-tg.vercel.app",
 ]
 
 app.add_middleware(

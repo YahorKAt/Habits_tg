@@ -57,7 +57,9 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         # Вычисляем secret_key и hash
         secret_key = hashlib.sha256(f"WebAppData{bot_token}".encode()).digest()
         computed_hash = hmac.new(secret_key, check_data.encode(), hashlib.sha256).hexdigest()
-
+        logger.info(f"\ninit_data_raw length: {len(init_data_raw)}")
+        logger.info(f"BOT_TOKEN length: {len(bot_token)}")
+        logger.info(f"check_data: {check_data[:100]}...\n")
         # Сравниваем hash
         if computed_hash != hash_value:
             logger.warning(f"Hash mismatch! Expected: {hash_value}, Got: {computed_hash}")
