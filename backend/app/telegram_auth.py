@@ -16,37 +16,45 @@ logger = logging.getLogger(__name__)
 def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
     """
     Валидация init_data от Telegram WebApp.
-    Используем оригинальные URL-encoded значения для проверки hash.
+    Используем ОРИГИНАЛЬНЫЕ URL-encoded значения для формирования data_check_string.
     """
+    logger.info(f"=== Starting init_data validation ===")
+    logger.info(f"Raw init_data (first 200 chars): {init_data_raw[:200]}")
+    
     try:
         # Разбираем на пары key=value
-        parsed_data = {}
+        # Для data_check_string нужны ОРИГИНАЛЬНЫЕ значения (URL-encoded)
+        # Для использования нужны ДЕКОДИРОВАННЫЕ значения
+        data_for_check = {}  # key -> original_value (URL-encoded)
+        data_decoded = {}    # key -> decoded_value
         hash_value = None
         
         for item in init_data_raw.split('&'):
             if '=' not in item:
                 continue
             
-            key, value = item.split('=', 1)
-            key_decoded = urllib.parse.unquote_plus(key)
-            value_decoded = urllib.parse.unquote_plus(value)
+            key_encoded, value_encoded = item.split('=', 1)
+            key = urllib.parse.unquote_plus(key_encoded)
+            value_decoded = urllib.parse.unquote_plus(value_encoded)
             
-            if key_decoded == "hash":
+            if key == "hash":
                 hash_value = value_decoded
                 continue
             
-            if key_decoded == "signature":
+            if key == "signature":
                 continue
             
-            # Сохраняем декодированные значения
-            parsed_data[key_decoded] = value_decoded
+            # Сохраняем оригинальное URL-encoded значение для проверки
+            data_for_check[key] = value_encoded
+            # Сохраняем декодированное для использования
+            data_decoded[key] = value_decoded
 
         if not hash_value:
             logger.warning("Missing hash in init_data")
             return None
 
         # Проверяем auth_date
-        auth_date_str = parsed_data.get("auth_date")
+        auth_date_str = data_decoded.get("auth_date")
         if auth_date_str:
             try:
                 auth_date = int(auth_date_str)
@@ -64,11 +72,11 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
             logger.error("BOT_TOKEN not found")
             return None
 
-        # Формируем data_check_string: key=value отсортированные по key
-        # По документации Telegram используются ДЕКОДИРОВАННЫЕ значения
+        # Формируем data_check_string из ОРИГИНАЛЬНЫХ URL-encoded значений
+        # key=value (где value остаётся URL-encoded)
         data_check_string = "\n".join(
-            f"{key}={parsed_data[key]}" 
-            for key in sorted(parsed_data.keys())
+            f"{key}={data_for_check[key]}" 
+            for key in sorted(data_for_check.keys())
         )
 
         # secret_key = HMAC-SHA256(key="WebAppData", msg=bot_token)
@@ -99,8 +107,8 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
 
         logger.info("✅ Hash matched!")
 
-        # Извлекаем user
-        user_raw = parsed_data.get("user")
+        # Извлекаем user из ДЕКОДИРОВАННЫХ данных
+        user_raw = data_decoded.get("user")
         if not user_raw:
             logger.warning("Missing user")
             return None
