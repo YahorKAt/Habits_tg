@@ -2,6 +2,11 @@
 # Команда для установки зависимостей
 buildCommand = "pip install -r requirements.txt"
 
+[deploy]
+# Быстрая остановка старых контейнеров
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
 [start]
 # Команда для запуска бота
 startCommand = "python example_bot.py"
