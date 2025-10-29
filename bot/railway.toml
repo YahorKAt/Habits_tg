@@ -4,7 +4,7 @@ buildCommand = "pip install -r requirements.txt"
 
 [start]
 # Команда для запуска бота
-startCommand = "python bot/example_bot.py"
+startCommand = "python example_bot.py"
 
 [env]
 PYTHON_VERSION = "3.11"
