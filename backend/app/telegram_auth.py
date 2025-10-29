@@ -67,10 +67,12 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
                 return None
 
         # Получаем BOT_TOKEN
-        bot_token = os.getenv("BOT_TOKEN", "")
+        bot_token = os.getenv("BOT_TOKEN", "").strip()
         if not bot_token:
             logger.error("BOT_TOKEN not found")
             return None
+        
+        logger.info(f"BOT_TOKEN from env: {bot_token}")
 
         # Формируем data_check_string из ОРИГИНАЛЬНЫХ URL-encoded значений
         # key=value (где value остаётся URL-encoded)
