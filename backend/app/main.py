@@ -46,12 +46,17 @@ def on_startup() -> None:
 
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
     if not x_telegram_init_data:
+        logger.warning("Missing X-Telegram-Init-Data header")
         raise HTTPException(status_code=401, detail="Missing Telegram init data")
+    
     user = parse_and_validate_init_data(x_telegram_init_data)
     if not user or "id" not in user:
-        print("Не нашёл данных X-Telegram-Init-Data received:", x_telegram_init_data)
+        logger.warning(f"Failed to validate init_data. Header present: {bool(x_telegram_init_data)}")
         raise HTTPException(status_code=401, detail="Invalid Telegram auth")
-    return int(user["id"])  # type: ignore
+    
+    user_id = int(user["id"])
+    logger.debug(f"Authenticated user_id: {user_id}")
+    return user_id
 
 
 @app.get("/health")
