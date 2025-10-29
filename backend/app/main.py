@@ -23,7 +23,7 @@ app = FastAPI(title="Habits Mini App API")
 
 origins = [
     "https://habits-tg.vercel.app",  # ваш домен Vercel
-    "https://*.railway.app",  # Railway
+    "backend-production-cd9a.up.railway.app",  # Railway
     "https://*.telegram.org",
     "https://t.me",
 ]

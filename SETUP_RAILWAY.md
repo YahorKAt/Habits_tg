@@ -23,8 +23,8 @@
 1. После создания проекта, Railway создаст первый сервис
 2. Переименуйте его в "backend"
 3. В Settings:
-   - **Start Command**: `uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT`
-   - **Root Directory**: оставьте пустым (корень)
+   - **Root Directory**: `backend` (ВАЖНО!)
+   - **Start Command**: оставьте пустым (будет использован из nixpacks.toml)
 
 4. Добавьте PostgreSQL:
    - Нажмите "New" → "Database" → "Add PostgreSQL"
@@ -46,8 +46,8 @@
 2. Выберите тот же репозиторий
 3. Переименуйте сервис в "bot"
 4. В Settings:
-   - **Start Command**: `python bot/example_bot.py`
-   - **Root Directory**: оставьте пустым
+   - **Root Directory**: `bot` (ВАЖНО!)
+   - **Start Command**: оставьте пустым (будет использован из nixpacks.toml)
 
 5. Добавьте переменные окружения:
    ```
