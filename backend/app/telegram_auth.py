@@ -19,22 +19,37 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
     https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
     """
     try:
-        # Парсим init_data используя parse_qsl (правильное декодирование)
-        try:
-            parsed_pairs = urllib.parse.parse_qsl(init_data_raw, keep_blank_values=True)
-        except Exception as e:
-            logger.error(f"Failed to parse init_data: {e}")
-            return None
+        # ВАЖНО: Парсим вручную, сохраняя оригинальные URL-encoded значения!
+        # parse_qsl декодирует значения, что ломает проверку hash
+        # Telegram вычисляет hash от оригинальной URL-encoded строки
         
-        # Создаем словарь из распарсенных пар
-        parsed_data = dict(parsed_pairs)
-        if "hash" not in parsed_data:
+        pairs = []  # [(key, value_encoded), ...]
+        parsed_data = {}  # {key: value_decoded} для использования
+        hash_value = None
+        
+        for pair in init_data_raw.split('&'):
+            if '=' not in pair:
+                continue
+            key, value = pair.split('=', 1)
+            
+            # Декодируем ключ
+            key_decoded = urllib.parse.unquote_plus(key)
+            
+            if key_decoded == "hash":
+                hash_value = value
+                continue
+            
+            if key_decoded == "signature":
+                continue
+            
+            # Сохраняем пару с ОРИГИНАЛЬНЫМ URL-encoded значением
+            pairs.append((key_decoded, value))
+            # Сохраняем декодированное для использования
+            parsed_data[key_decoded] = urllib.parse.unquote_plus(value)
+        
+        if not hash_value:
             logger.warning("Missing hash in init_data")
             return None
-        
-        # Извлекаем hash и удаляем его из данных (он не участвует в проверке)
-        hash_value = parsed_data.pop("hash")
-        parsed_data.pop("signature", None)  # Удаляем signature если есть
         
         # Проверяем auth_date (данные не должны быть старше 24 часов)
         auth_date_str = parsed_data.get("auth_date")
@@ -55,9 +70,9 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
             logger.error("BOT_TOKEN not found in environment variables")
             return None
 
-        # Формируем строку для проверки: сортируем по ключам (уже декодированным)
-        # Значения должны быть в том виде, как они были распарсены parse_qsl (деконодированы)
-        check_data = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
+        # Формируем check_data: сортируем по декодированным ключам, но используем URL-encoded значения!
+        pairs_sorted = sorted(pairs, key=lambda x: x[0])
+        check_data = "\n".join(f"{k}={v}" for k, v in pairs_sorted)
         
         # ВАЖНО: Вычисляем secret_key используя HMAC, а не SHA256!
         # secret_key = HMAC-SHA256(key="WebAppData", message=bot_token)
