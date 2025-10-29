@@ -35,6 +35,12 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         
         # Удаляем signature если есть
         parsed_data.pop("signature", None)
+        
+        # Убираем экранированные слеши из JSON полей
+        for key, value in parsed_data.items():
+            if value.startswith("{") or value.startswith("["):
+                # Это JSON - убираем \/ → /
+                parsed_data[key] = value.replace("\\/", "/")
 
         # Проверяем auth_date
         auth_date_str = parsed_data.get("auth_date")
