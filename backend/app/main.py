@@ -46,13 +46,17 @@ def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
         logger.warning("Missing X-Telegram-Init-Data header")
         raise HTTPException(status_code=401, detail="Missing Telegram init data")
     
+    logger.info(f"Received X-Telegram-Init-Data header, length: {len(x_telegram_init_data) if x_telegram_init_data else 0}")
+    
     user = parse_and_validate_init_data(x_telegram_init_data)
     if not user or "id" not in user:
-        logger.warning(f"Failed to validate init_data. Header present: {bool(x_telegram_init_data)}")
+        logger.error(f"Failed to validate init_data. Header present: {bool(x_telegram_init_data)}")
+        logger.error(f"Header length: {len(x_telegram_init_data) if x_telegram_init_data else 0}")
+        logger.error(f"BOT_TOKEN from env: {'SET' if os.getenv('BOT_TOKEN') else 'NOT SET'}")
         raise HTTPException(status_code=401, detail="Invalid Telegram auth")
     
     user_id = int(user["id"])
-    logger.debug(f"Authenticated user_id: {user_id}")
+    logger.info(f"Successfully authenticated user_id: {user_id}")
     return user_id
 
 

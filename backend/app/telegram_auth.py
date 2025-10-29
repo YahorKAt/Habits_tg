@@ -56,6 +56,7 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
             return None
 
         # Формируем строку для проверки: сортируем по ключам (уже декодированным)
+        # Значения должны быть в том виде, как они были распарсены parse_qsl (деконодированы)
         check_data = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
         
         # ВАЖНО: Вычисляем secret_key используя HMAC, а не SHA256!
@@ -70,13 +71,17 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         computed_hash = hmac.new(secret_key, check_data.encode(), hashlib.sha256).hexdigest()
         
         logger.info(f"init_data_raw length: {len(init_data_raw)}")
-        logger.info(f"BOT_TOKEN length: {len(bot_token)}")
-        logger.info(f"check_data (first 200 chars): {check_data[:200]}...")
+        logger.info(f"BOT_TOKEN exists: {bool(bot_token)}, length: {len(bot_token) if bot_token else 0}")
+        logger.info(f"check_data (first 300 chars): {check_data[:300]}")
+        logger.info(f"parsed_data keys: {sorted(parsed_data.keys())}")
+        
         # Сравниваем hash
         if computed_hash != hash_value:
-            logger.warning(f"Hash mismatch! Expected: {hash_value}, Got: {computed_hash}")
-            logger.info(f"check_data full: {check_data}")
-            logger.info(f"parsed_data keys: {list(parsed_data.keys())}")
+            logger.warning(f"Hash mismatch!")
+            logger.warning(f"Expected hash: {hash_value}")
+            logger.warning(f"Computed hash: {computed_hash}")
+            logger.info(f"check_data full:\n{check_data}")
+            logger.info(f"First 50 chars of bot_token: {bot_token[:50] if len(bot_token) > 50 else bot_token}")
             return None
 
         # Извлекаем user из JSON (используем декодированные данные)
