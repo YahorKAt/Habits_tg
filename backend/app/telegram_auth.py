@@ -19,34 +19,25 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
     https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
     """
     try:
-        # ВАЖНО: Парсим вручную, сохраняя значения в URL-encoded виде
-        # parse_qs автоматически декодирует значения, что ломает проверку hash!
-        data_raw = {}  # Храним значения как есть (URL-encoded)
-        data_decoded = {}  # Декодированные значения для использования
+        # Парсим init_data используя parse_qsl (правильное декодирование)
+        try:
+            parsed_pairs = urllib.parse.parse_qsl(init_data_raw, keep_blank_values=True)
+        except Exception as e:
+            logger.error(f"Failed to parse init_data: {e}")
+            return None
         
-        for pair in init_data_raw.split('&'):
-            if '=' not in pair:
-                continue
-            key_raw, value_raw = pair.split('=', 1)
-            # Декодируем ключ для использования
-            key = urllib.parse.unquote_plus(key_raw)
-            # Сохраняем оригинальное значение для проверки hash
-            data_raw[key] = value_raw
-            # Декодируем значение для использования
-            data_decoded[key] = urllib.parse.unquote_plus(value_raw)
-
-        # Извлекаем hash для проверки
-        hash_value = data_raw.pop("hash", None)
-        if not hash_value:
+        # Создаем словарь из распарсенных пар
+        parsed_data = dict(parsed_pairs)
+        if "hash" not in parsed_data:
             logger.warning("Missing hash in init_data")
             return None
-
-        # Удаляем signature если есть (он не должен быть в строке для проверки)
-        data_raw.pop("signature", None)
-        data_decoded.pop("signature", None)
-
+        
+        # Извлекаем hash и удаляем его из данных (он не участвует в проверке)
+        hash_value = parsed_data.pop("hash")
+        parsed_data.pop("signature", None)  # Удаляем signature если есть
+        
         # Проверяем auth_date (данные не должны быть старше 24 часов)
-        auth_date_str = data_decoded.get("auth_date")
+        auth_date_str = parsed_data.get("auth_date")
         if auth_date_str:
             try:
                 auth_date = int(auth_date_str)
@@ -64,12 +55,18 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
             logger.error("BOT_TOKEN not found in environment variables")
             return None
 
-        # Собираем строку для проверки: используем ИСХОДНЫЕ URL-encoded значения!
-        # Это критично - hash вычисляется на основе закодированных значений
-        check_data = "\n".join(f"{k}={data_raw[k]}" for k in sorted(data_raw.keys()))
+        # Формируем строку для проверки: сортируем по ключам (уже декодированным)
+        check_data = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
         
-        # Вычисляем secret_key и hash
-        secret_key = hashlib.sha256(f"WebAppData{bot_token}".encode()).digest()
+        # ВАЖНО: Вычисляем secret_key используя HMAC, а не SHA256!
+        # secret_key = HMAC-SHA256(key="WebAppData", message=bot_token)
+        secret_key = hmac.new(
+            key=b"WebAppData", 
+            msg=bot_token.encode(), 
+            digestmod=hashlib.sha256
+        ).digest()
+        
+        # Вычисляем hash от check_data
         computed_hash = hmac.new(secret_key, check_data.encode(), hashlib.sha256).hexdigest()
         
         logger.info(f"init_data_raw length: {len(init_data_raw)}")
@@ -79,11 +76,11 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         if computed_hash != hash_value:
             logger.warning(f"Hash mismatch! Expected: {hash_value}, Got: {computed_hash}")
             logger.info(f"check_data full: {check_data}")
-            logger.info(f"data keys: {list(data_raw.keys())}")
+            logger.info(f"parsed_data keys: {list(parsed_data.keys())}")
             return None
 
         # Извлекаем user из JSON (используем декодированные данные)
-        user_raw = data_decoded.get("user")
+        user_raw = parsed_data.get("user")
         if not user_raw:
             logger.warning("Missing user in init_data")
             return None
