@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
     """
-    Валидация init_data от Telegram WebApp согласно официальной документации.
+    Валидация init_data от Telegram WebApp согласно официальной документации:
     https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
     """
     try:
