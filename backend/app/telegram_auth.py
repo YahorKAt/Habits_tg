@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from telegram_webapp_auth import validate as twa_validate  # type: ignore
+from telegram_webapp_auth import TelegramWebAppAuth  # type: ignore
 from urllib.parse import parse_qs
 import hashlib
 import hmac
@@ -29,14 +29,15 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         try:
             bot_token_env = os.getenv("BOT_TOKEN", "").strip()
             if bot_token_env:
-                valid = twa_validate(init_data_raw, bot_token_env)
-                # valid – словарь c уже проверенными и декодированными полями
+                auth = TelegramWebAppAuth(bot_token_env)
+                valid = auth.validate(init_data_raw)
                 user_raw = valid.get("user") if isinstance(valid, dict) else None
                 if isinstance(user_raw, dict):
                     logger.info("✅ User validated via telegram-webapp-auth")
                     return user_raw
                 if isinstance(user_raw, str):
                     try:
+                        logger.info("✅ User validated via telegram-webapp-auth (JSON string)")
                         return json.loads(user_raw)
                     except Exception:
                         pass
