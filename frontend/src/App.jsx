@@ -175,21 +175,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
           </div>
         </div>
 
-        {/* Предварительный просмотр */}
-        {/* <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">Предварительный просмотр</label>
-          <div className="card bg-gray-50 min-h-[100px] flex items-center justify-center text-gray-400">
-            {title ? (
-              <div className="text-center">
-                <div className="text-lg mb-1">{TASK_CATEGORIES[category]?.icon}</div>
-                <div className="font-medium">{title}</div>
-                {description && <div className="text-sm text-gray-500 mt-1">{description}</div>}
-              </div>
-            ) : (
-              'Предварительный просмотр появится здесь'
-            )}
-          </div>
-        </div> */}
+
       </div>
 
       {/* Bottom buttons */}
