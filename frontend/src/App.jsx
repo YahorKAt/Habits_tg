@@ -600,6 +600,9 @@ function JournalPage() {
   const [newNote, setNewNote] = useState('')
   const [selectedMood, setSelectedMood] = useState('')
   const [monthMoodMap, setMonthMoodMap] = useState({})
+  const [editingNote, setEditingNote] = useState(null)
+  const [editContent, setEditContent] = useState('')
+  const [editMood, setEditMood] = useState('')
 
   // Варианты настроения (ключи)
   const moodOptions = [
@@ -709,6 +712,51 @@ function JournalPage() {
   const cancelCreate = () => {
     setNewNote('')
     setShowCreateForm(false)
+  }
+
+  const startEdit = (note) => {
+    setEditingNote(note)
+    setEditContent(note.content || '')
+    setEditMood(normalizeMood(note.mood || 'neutral'))
+  }
+
+  const cancelEdit = () => {
+    setEditingNote(null)
+    setEditContent('')
+    setEditMood('')
+  }
+
+  const saveEdit = async () => {
+    if (!editingNote) return
+    if (!editMood) {
+      alert('Пожалуйста, выберите настроение')
+      return
+    }
+    const payload = {
+      content: editContent.trim(),
+      date: format(selectedDate, 'yyyy-MM-dd'),
+      mood: editMood,
+    }
+    try {
+      // Попробуем PUT, если не поддерживается — fallback: DELETE+POST
+      try {
+        const updated = await api(`/notes/${editingNote.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload)
+        })
+        setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n))
+      } catch (e) {
+        await api(`/notes/${editingNote.id}`, { method: 'DELETE' })
+        const created = await api('/notes', { method: 'POST', body: JSON.stringify(payload) })
+        setNotes(prev => [created, ...prev.filter(n => n.id !== editingNote.id)])
+      }
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      setMonthMoodMap(prev => ({ ...prev, [dateStr]: moodToClasses(editMood) }))
+      cancelEdit()
+    } catch (err) {
+      console.error(err)
+      alert('Не удалось сохранить изменения')
+    }
   }
 
   useEffect(() => {
@@ -824,7 +872,7 @@ function JournalPage() {
                           </div>
                           <div className="text-sm">{note.content}</div>
                         </div>
-                        <button className="text-gray-400 hover:text-gray-600">
+                        <button onClick={() => startEdit(note)} className="text-gray-400 hover:text-gray-600">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                             <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13M18.5 2.5C18.8978 2.10218 19.4374 1.87868 20 1.87868C20.5626 1.87868 21.1022 2.10218 21.5 2.5C21.8978 2.89782 22.1213 3.43739 22.1213 4C22.1213 4.56261 21.8978 5.10218 21.5 5.5L12 15L8 11L18.5 2.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
@@ -889,7 +937,7 @@ function JournalPage() {
                 <div className="text-center py-8">
                   <div className="text-6xl mb-4">📖</div>
                   <div className="text-lg font-medium text-gray-700 mb-2">Нет записей</div>
-                  <div className="text-sm text-gray-500 mb-6">На эту дату нет записей</div>
+                  {/* <div className="text-sm text-gray-500 mb-6">На эту дату нет записей</div> */}
                   <button
                     onClick={() => setShowCreateForm(true)}
                     className="btn"
@@ -901,6 +949,39 @@ function JournalPage() {
             </>
           )}
         </div>
+
+        {/* Редактирование заметки */}
+        {editingNote && (
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4">Редактировать заметку</h3>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <select
+                  value={editMood}
+                  onChange={(e) => setEditMood(e.target.value)}
+                  className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="" disabled>Выберите настроение</option>
+                  {moodOptions.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+                <span className="inline-flex"><MoodIcon value={editMood || 'neutral'} /></span>
+              </div>
+              <textarea
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                placeholder="Измените заметку..."
+                rows={4}
+              />
+              <div className="flex gap-3">
+                <button onClick={saveEdit} disabled={!editMood} className="btn flex-1 disabled:opacity-50">Сохранить</button>
+                <button onClick={cancelEdit} className="btn-secondary flex-1">Отмена</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
