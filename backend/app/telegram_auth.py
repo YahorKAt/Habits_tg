@@ -20,7 +20,6 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         return None
 
     try:
-        from telegram_webapp_auth import TelegramWebAppAuth  # type: ignore
         auth = TelegramAuthenticator(bot_token)
         valid = auth.validate(init_data_raw)
         user_raw = valid.get("user") if isinstance(valid, dict) else None
