@@ -568,6 +568,28 @@ function StatisticsPage() {
   )
 }
 
+// SVG иконка настроения
+function MoodIcon({ value, size = 20 }) {
+  const map = {
+    very_bad: { fill: '#EF4444', stroke: '#B91C1C', mouth: 'down' },
+    bad: { fill: '#FCA5A5', stroke: '#EF4444', mouth: 'down' },
+    neutral: { fill: '#FDE047', stroke: '#CA8A04', mouth: 'flat' },
+    good: { fill: '#86EFAC', stroke: '#16A34A', mouth: 'up' },
+    very_good: { fill: '#22C55E', stroke: '#15803D', mouth: 'up' },
+  }
+  const c = map[value] || map.neutral
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <circle cx="24" cy="24" r="22" fill={c.fill} stroke={c.stroke} strokeWidth="2" />
+      <circle cx="17" cy="20" r="3" fill="#1F2937" />
+      <circle cx="31" cy="20" r="3" fill="#1F2937" />
+      {c.mouth === 'up' && <path d="M16 30 C 20 36, 28 36, 32 30" stroke="#1F2937" strokeWidth="3" fill="none" strokeLinecap="round" />}
+      {c.mouth === 'down' && <path d="M16 34 C 20 28, 28 28, 32 34" stroke="#1F2937" strokeWidth="3" fill="none" strokeLinecap="round" />}
+      {c.mouth === 'flat' && <path d="M16 32 L 32 32" stroke="#1F2937" strokeWidth="3" strokeLinecap="round" />}
+    </svg>
+  )
+}
+
 // Компонент для страницы журнала
 function JournalPage() {
   const initData = useInitData()
@@ -579,13 +601,13 @@ function JournalPage() {
   const [selectedMood, setSelectedMood] = useState('')
   const [monthMoodMap, setMonthMoodMap] = useState({})
 
-  // Доступные эмоджи настроения (5 вариантов по спецификации)
+  // Варианты настроения (ключи)
   const moodOptions = [
-    { emoji: '😡', label: 'Агрессивное' },
-    { emoji: '😞', label: 'Плохое' },
-    { emoji: '😐', label: 'Нормальное' },
-    { emoji: '🙂', label: 'Хорошее' },
-    { emoji: '🤩', label: 'Отличное' }
+    { value: 'very_bad', label: 'Агрессивное' },
+    { value: 'bad', label: 'Плохое' },
+    { value: 'neutral', label: 'Нормальное' },
+    { value: 'good', label: 'Хорошее' },
+    { value: 'very_good', label: 'Отличное' }
   ]
 
   async function api(path, options = {}) {
@@ -612,17 +634,29 @@ function JournalPage() {
     }
   }
 
-  const moodToClasses = (mood) => {
+  const normalizeMood = (mood) => {
     switch (mood) {
-      case '🤩':
+      case '😡': return 'very_bad'
+      case '😞': return 'bad'
+      case '😐': return 'neutral'
+      case '🙂': return 'good'
+      case '🤩': return 'very_good'
+      default: return mood
+    }
+  }
+
+  const moodToClasses = (mood) => {
+    const m = normalizeMood(mood)
+    switch (m) {
+      case 'very_good':
         return 'bg-green-600 text-white'
-      case '🙂':
+      case 'good':
         return 'bg-green-300 text-gray-900'
-      case '😐':
+      case 'neutral':
         return 'bg-yellow-300 text-gray-900'
-      case '😞':
+      case 'bad':
         return 'bg-red-300 text-gray-900'
-      case '😡':
+      case 'very_bad':
         return 'bg-red-600 text-white'
       default:
         return ''
@@ -781,7 +815,9 @@ function JournalPage() {
                   {notes.map(note => (
                     <div key={note.id} className="bg-gray-50 rounded-xl p-3">
                       <div className="flex items-start gap-3">
-                        <span className="text-lg">{note.mood || '😊'}</span>
+                        <span className="inline-flex">
+                          <MoodIcon value={normalizeMood(note.mood || 'neutral')} />
+                        </span>
                         <div className="flex-1">
                           <div className="text-sm text-gray-500 mb-1">
                             {format(new Date(note.created_at), 'HH:mm')}
@@ -808,9 +844,9 @@ function JournalPage() {
                       className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="" disabled>Выберите настроение</option>
-                      {moodOptions.map((mood) => (
-                        <option key={mood.emoji} value={mood.emoji}>
-                          {mood.emoji} {mood.label}
+                      {moodOptions.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
                         </option>
                       ))}
                     </select>
