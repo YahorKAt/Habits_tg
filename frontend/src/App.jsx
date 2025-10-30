@@ -341,7 +341,7 @@ function TasksPage({ onCreateTask }) {
               {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
             </div>
           </div>
-          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1">
+          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1">
             {daysAround.map((d) => {
               const isSel = isSameDay(d, selectedDate)
               const isTod = isSameDay(d, new Date())
