@@ -176,7 +176,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
         </div>
 
         {/* Предварительный просмотр */}
-        <div>
+        {/* <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">Предварительный просмотр</label>
           <div className="card bg-gray-50 min-h-[100px] flex items-center justify-center text-gray-400">
             {title ? (
@@ -189,7 +189,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
               'Предварительный просмотр появится здесь'
             )}
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* Bottom buttons */}
