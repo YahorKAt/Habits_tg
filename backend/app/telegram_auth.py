@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import urllib.parse
+from telegram_webapp_auth import validate as twa_validate  # type: ignore
+from urllib.parse import parse_qs
 import hashlib
 import hmac
 import json
@@ -22,8 +23,30 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
     logger.info(f"Raw init_data (first 200 chars): {init_data_raw[:200]}")
     
     try:
+        # 1) Попытка валидации через официальную библиотеку telegram-webapp-auth
+        #    https://github.com/swimmwatch/telegram-webapp-auth (v3.0.6)
+        #    Если библиотека недоступна/бросит исключение – ниже сработает надёжный фолбэк.
+        try:
+            bot_token_env = os.getenv("BOT_TOKEN", "").strip()
+            if bot_token_env:
+                valid = twa_validate(init_data_raw, bot_token_env)
+                # valid – словарь c уже проверенными и декодированными полями
+                user_raw = valid.get("user") if isinstance(valid, dict) else None
+                if isinstance(user_raw, dict):
+                    logger.info("✅ User validated via telegram-webapp-auth")
+                    return user_raw
+                if isinstance(user_raw, str):
+                    try:
+                        return json.loads(user_raw)
+                    except Exception:
+                        pass
+        except Exception as _:
+            # Переходим на фолбэк-реализацию ниже
+            pass
+
+        # 2) Фолбэк‑валидация (ручная, совместимая с Telegram docs)
         # Разбираем на пары key=value используя parse_qs
-        parsed_data = urllib.parse.parse_qs(init_data_raw, keep_blank_values=True)
+        parsed_data = parse_qs(init_data_raw)
         parsed_data = {k: v[0] for k, v in parsed_data.items()}
         
         # Извлекаем hash
@@ -87,12 +110,10 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         logger.info(f"data_check_string:\n{data_check_string}")
         logger.info(f"Expected: {hash_value}")
         logger.info(f"Computed: {computed_hash}")
-        logger.info(f"BOT_TOKEN (first 20): {bot_token[:20]}")
 
         # Сравниваем
         if computed_hash != hash_value:
             logger.error("❌ Hash mismatch!")
-            logger.error(f"Проверьте что BOT_TOKEN на Render = {bot_token}")
             return None
 
         logger.info("✅ Hash matched!")

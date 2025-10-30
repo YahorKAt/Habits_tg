@@ -23,7 +23,6 @@ function useTelegram() {
   const tg = window.Telegram?.WebApp
   if (tg.initData) {
     console.log("Telegram initData found")
-    console.log("initData =:", window.Telegram.WebApp.initData)
   } else {
     console.log("No Telegram data detected")
   }
