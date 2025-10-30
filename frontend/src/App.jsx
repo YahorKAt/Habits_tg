@@ -677,7 +677,10 @@ function JournalPage() {
               </svg>
             </button>
             <h2 className="text-lg font-semibold">
-              {format(selectedDate, 'MMMM yyyy', { locale: ru })}
+              {(() => {
+                const label = format(selectedDate, 'LLLL yyyy', { locale: ru })
+                return label.charAt(0).toUpperCase() + label.slice(1)
+              })()}
             </h2>
             <button onClick={goToNextMonth} className="text-gray-400 hover:text-gray-600">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
