@@ -1,7 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from telegram_webapp_auth import TelegramWebAppAuth  # type: ignore
 from urllib.parse import parse_qs
 import hashlib
 import hmac
@@ -26,6 +25,7 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
         # 1) Попытка валидации через официальную библиотеку telegram-webapp-auth
         #    https://github.com/swimmwatch/telegram-webapp-auth (v3.0.6)
         #    Если библиотека недоступна/бросит исключение – ниже сработает надёжный фолбэк.
+        from telegram_webapp_auth import TelegramWebAppAuth  # type: ignore
         try:
             bot_token_env = os.getenv("BOT_TOKEN", "").strip()
             if bot_token_env:
