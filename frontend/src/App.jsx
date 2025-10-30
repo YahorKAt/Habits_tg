@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { format, startOfWeek, addDays, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -221,6 +221,7 @@ function TasksPage({ onCreateTask }) {
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
+  const ribbonRef = useRef(null)
 
   async function api(path, options = {}) {
     const res = await fetch(`${API_URL}${path}`, {
@@ -274,15 +275,20 @@ function TasksPage({ onCreateTask }) {
 
   const daysAround = useMemo(() => {
     const days = []
-    const totalPast = 120 // сколько дней назад можно скроллить
-    const totalFuture = 14
-    for (let i = -totalPast; i <= totalFuture; i++) {
-      const d = new Date(selectedDate)
-      d.setDate(selectedDate.getDate() + i)
+    const today = new Date()
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
       days.push(d)
     }
     return days
-  }, [selectedDate])
+  }, [])
+
+  useEffect(() => {
+    if (ribbonRef.current) {
+      ribbonRef.current.scrollLeft = ribbonRef.current.scrollWidth
+    }
+  }, [])
 
   const toggleTask = async (task) => {
     try {
@@ -335,17 +341,18 @@ function TasksPage({ onCreateTask }) {
               {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
             </div>
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1">
             {daysAround.map((d) => {
               const isSel = isSameDay(d, selectedDate)
+              const isTod = isSameDay(d, new Date())
               return (
                 <button
                   key={d.toISOString()}
                   onClick={() => setSelectedDate(new Date(d))}
-                  className={`px-3 py-2 rounded-xl whitespace-nowrap border ${isSel ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200'}`}
+                  className={`px-3 py-2 rounded-xl whitespace-nowrap border ${isSel ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200'} ${isTod ? 'ring-2 ring-blue-500' : ''}`}
                 >
                   <div className="text-xs text-gray-500">
-                    {format(d, 'EEE', { locale: ru }).toUpperCase()}
+                    {format(d, 'EEE').toUpperCase()}
                   </div>
                   <div className="text-sm font-semibold">{format(d, 'dd')}</div>
                 </button>
