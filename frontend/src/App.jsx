@@ -365,12 +365,15 @@ function TasksPage({ onCreateTask }) {
         {filteredTasks.map(task => (
           <div key={task.id} className="task-card overflow-hidden">
             <div className="flex gap-3 items-start">
-              <input
-                type="checkbox"
-                checked={task.completed}
-                onChange={() => toggleTask(task)}
-                className="mt-1 w-5 h-5 rounded border-gray-300"
-              />
+              <button
+                onClick={() => toggleTask(task)}
+                className={`mt-1 w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors ${task.completed ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-orange-400 text-transparent'}`}
+                aria-pressed={task.completed}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
 
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 gap-y-2 mb-2">
