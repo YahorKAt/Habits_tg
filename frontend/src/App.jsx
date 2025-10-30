@@ -576,7 +576,8 @@ function JournalPage() {
   const [loading, setLoading] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newNote, setNewNote] = useState('')
-  const [selectedMood, setSelectedMood] = useState('😊')
+  const [selectedMood, setSelectedMood] = useState('')
+  const [monthMoodMap, setMonthMoodMap] = useState({})
 
   // Доступные эмоджи настроения (5 вариантов по спецификации)
   const moodOptions = [
@@ -611,7 +612,46 @@ function JournalPage() {
     }
   }
 
+  const moodToClasses = (mood) => {
+    switch (mood) {
+      case '🤩':
+        return 'bg-green-600 text-white'
+      case '🙂':
+        return 'bg-green-300 text-gray-900'
+      case '😐':
+        return 'bg-yellow-300 text-gray-900'
+      case '😞':
+        return 'bg-red-300 text-gray-900'
+      case '😡':
+        return 'bg-red-600 text-white'
+      default:
+        return ''
+    }
+  }
+
+  const loadMonthMood = async (date) => {
+    const start = startOfMonth(date)
+    const end = endOfMonth(date)
+    const days = eachDayOfInterval({ start, end })
+    const map = {}
+    for (const d of days) {
+      const dateStr = format(d, 'yyyy-MM-dd')
+      try {
+        const data = await api(`/notes?date=${dateStr}`)
+        if (Array.isArray(data) && data.length > 0) {
+          const first = data[0]
+          if (first?.mood) map[dateStr] = moodToClasses(first.mood)
+        }
+      } catch (e) { /* ignore per-day errors */ }
+    }
+    setMonthMoodMap(map)
+  }
+
   const createNote = async () => {
+    if (!selectedMood) {
+      alert('Пожалуйста, выберите настроение')
+      return
+    }
     try {
       const created = await api('/notes', {
         method: 'POST',
@@ -624,6 +664,8 @@ function JournalPage() {
       setNotes(prev => [created, ...prev])
       setNewNote('')
       setShowCreateForm(false)
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      setMonthMoodMap(prev => ({ ...prev, [dateStr]: moodToClasses(selectedMood) }))
     } catch (err) {
       console.error(err)
       alert('Не удалось добавить заметку')
@@ -637,8 +679,12 @@ function JournalPage() {
 
   useEffect(() => {
     loadNotes(selectedDate)
-    setShowCreateForm(false) // Сбрасываем форму при смене даты
+    setShowCreateForm(false)
   }, [selectedDate])
+
+  useEffect(() => {
+    loadMonthMood(selectedDate)
+  }, [selectedDate.getFullYear(), selectedDate.getMonth()])
 
   const calendarDays = useMemo(() => {
     const start = startOfMonth(selectedDate)
@@ -702,14 +748,18 @@ function JournalPage() {
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map((day, index) => (
               <div key={index} className="aspect-square flex items-center justify-center">
-                {day && (
-                  <button
-                    className={`calendar-day ${isToday(day) ? 'today' : ''}`}
-                    onClick={() => setSelectedDate(day)}
-                  >
-                    {format(day, 'd')}
-                  </button>
-                )}
+                {day && (() => {
+                  const dateStr = format(day, 'yyyy-MM-dd')
+                  const color = monthMoodMap[dateStr] || ''
+                  return (
+                    <button
+                      className={`calendar-day ${isToday(day) ? 'today' : ''} ${color}`}
+                      onClick={() => setSelectedDate(day)}
+                    >
+                      {format(day, 'd')}
+                    </button>
+                  )
+                })()}
               </div>
             ))}
           </div>
@@ -757,6 +807,7 @@ function JournalPage() {
                       onChange={(e) => setSelectedMood(e.target.value)}
                       className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
                     >
+                      <option value="" disabled>Выберите настроение</option>
                       {moodOptions.map((mood) => (
                         <option key={mood.emoji} value={mood.emoji}>
                           {mood.emoji} {mood.label}
@@ -778,7 +829,8 @@ function JournalPage() {
                   <div className="flex gap-3">
                     <button
                       onClick={createNote}
-                      className="btn flex-1 flex items-center justify-center gap-2"
+                      disabled={!selectedMood}
+                      className="btn flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                         <path d="M19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H16L21 8V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
