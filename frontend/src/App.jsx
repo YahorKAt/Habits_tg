@@ -107,7 +107,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
         {/* <p className="text-gray-600 text-sm mt-1">Создайте задачу для отслеживания</p> */}
       </div>
 
-      <div className="p-4 space-y-6">
+      <div className="p-4 space-y-6 pb-28">
         {/* Название задачи */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Название задачи</label>
