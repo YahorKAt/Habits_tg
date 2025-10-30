@@ -349,12 +349,12 @@ function TasksPage({ onCreateTask }) {
                 <button
                   key={d.toISOString()}
                   onClick={() => setSelectedDate(new Date(d))}
-                  className={`px-3 py-2 rounded-xl whitespace-nowrap border ${isSel ? 'bg-orange-900 text-white border-orange-900' : 'bg-white text-gray-700 border-gray-200'} ${isTod ? 'ring-2 ring-blue-500' : ''}`}
+                  className={`flex-none w-16 h-14 inline-flex flex-col items-center justify-center rounded-xl border select-none ${isSel ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200'} ${isTod ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : ''}`}
                 >
-                  <div className="text-xs text-gray-500">
+                  <div className={`text-[10px] font-medium ${isSel ? 'text-white/90' : 'text-gray-500'}`}>
                     {format(d, 'EEE').toUpperCase()}
                   </div>
-                  <div className="text-sm font-semibold">{format(d, 'dd')}</div>
+                  <div className="text-sm font-semibold leading-none">{format(d, 'dd')}</div>
                 </button>
               )
             })}
