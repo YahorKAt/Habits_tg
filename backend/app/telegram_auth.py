@@ -7,10 +7,7 @@ import typing
 from datetime import datetime, timedelta, timezone
 from json import JSONDecodeError
 from urllib.parse import parse_qs, unquote
-
-from telegram_webapp_auth.data import WebAppChat
-from telegram_webapp_auth.data import WebAppInitData
-from telegram_webapp_auth.data import WebAppUser
+from telegram_webapp_auth.data import WebAppChat, WebAppUser, WebAppInitData
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +122,19 @@ def parse_and_validate_init_data(init_data_raw: str) -> typing.Optional[typing.D
     try:
         secret = generate_secret_key(bot_token)
         auth = TelegramAuthenticator(secret)
- 
-        user_obj = auth.validate(init_data_raw, expr_in=timedelta(days=1))
 
+        init_obj = auth.validate(init_data_raw, expr_in=timedelta(days=1))
+
+        user_obj = getattr(init_obj, "user", None)
         if user_obj is None:
             return None
 
-        # elif hasattr(user_obj, "__dict__"):
-        #     user_dict = {k: v for k, v in user_obj.__dict__.items() if not k.startswith("_")}
+        if hasattr(user_obj, "dict") and callable(getattr(user_obj, "dict")):
+            user_dict = user_obj.dict()
+        elif hasattr(user_obj, "model_dump") and callable(getattr(user_obj, "model_dump")):
+            user_dict = user_obj.model_dump()
+        elif hasattr(user_obj, "__dict__"):
+            user_dict = {k: v for k, v in user_obj.__dict__.items() if not k.startswith("_")}
         else:
             # Fallback minimal payload
             user_id = getattr(user_obj, "id", None)
