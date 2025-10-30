@@ -220,6 +220,7 @@ function TasksPage({ onCreateTask }) {
   const [tasks, setTasks] = useState([])
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(new Date())
 
   async function api(path, options = {}) {
     const res = await fetch(`${API_URL}${path}`, {
@@ -248,16 +249,40 @@ function TasksPage({ onCreateTask }) {
     loadTasks()
   }, [])
 
+  const tasksForSelectedDay = useMemo(() => {
+    const start = new Date(selectedDate)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(selectedDate)
+    end.setHours(23, 59, 59, 999)
+    return tasks.filter(t => {
+      const ts = t.created_at ? new Date(t.created_at) : null
+      return ts ? ts >= start && ts <= end : true
+    })
+  }, [tasks, selectedDate])
+
   const filteredTasks = useMemo(() => {
+    const base = tasksForSelectedDay
     switch (filter) {
       case 'active':
-        return tasks.filter(task => !task.completed)
+        return base.filter(task => !task.completed)
       case 'completed':
-        return tasks.filter(task => task.completed)
+        return base.filter(task => task.completed)
       default:
-        return tasks
+        return base
     }
-  }, [tasks, filter])
+  }, [tasksForSelectedDay, filter])
+
+  const daysAround = useMemo(() => {
+    const days = []
+    const totalPast = 120 // сколько дней назад можно скроллить
+    const totalFuture = 14
+    for (let i = -totalPast; i <= totalFuture; i++) {
+      const d = new Date(selectedDate)
+      d.setDate(selectedDate.getDate() + i)
+      days.push(d)
+    }
+    return days
+  }, [selectedDate])
 
   const toggleTask = async (task) => {
     try {
@@ -303,6 +328,31 @@ function TasksPage({ onCreateTask }) {
       </div>
 
       <div className="p-4 pb-24 space-y-3">
+        {/* Календарная лента дат */}
+        <div className="card mb-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-base font-semibold">
+              {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
+            </div>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {daysAround.map((d) => {
+              const isSel = isSameDay(d, selectedDate)
+              return (
+                <button
+                  key={d.toISOString()}
+                  onClick={() => setSelectedDate(new Date(d))}
+                  className={`px-3 py-2 rounded-xl whitespace-nowrap border ${isSel ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200'}`}
+                >
+                  <div className="text-xs text-gray-500">
+                    {format(d, 'EEE', { locale: ru }).toUpperCase()}
+                  </div>
+                  <div className="text-sm font-semibold">{format(d, 'dd')}</div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
         {loading && <div className="text-center text-gray-500">Загрузка...</div>}
 
         {filteredTasks.map(task => (
