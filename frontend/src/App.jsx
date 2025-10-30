@@ -306,8 +306,8 @@ function TasksPage({ onCreateTask }) {
         {loading && <div className="text-center text-gray-500">Загрузка...</div>}
 
         {filteredTasks.map(task => (
-          <div key={task.id} className="task-card">
-            <div className="flex items-start gap-3">
+          <div key={task.id} className="task-card overflow-hidden">
+            <div className="flex gap-3 items-start">
               <input
                 type="checkbox"
                 checked={task.completed}
@@ -315,8 +315,8 @@ function TasksPage({ onCreateTask }) {
                 className="mt-1 w-5 h-5 rounded border-gray-300"
               />
 
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 gap-y-2 mb-2">
                   <span className="text-lg">{TASK_CATEGORIES[task.category]?.icon || '📋'}</span>
                   <span className="text-sm bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
                     {TASK_CATEGORIES[task.category]?.name || 'Общее'}
@@ -330,12 +330,12 @@ function TasksPage({ onCreateTask }) {
                   </span>
                 </div>
 
-                <h3 className={`font-medium ${task.completed ? 'line-through text-gray-500' : ''}`}>
+                <h3 className={`font-medium truncate ${task.completed ? 'line-through text-gray-500' : ''}`}>
                   {task.title}
                 </h3>
 
                 {task.description && (
-                  <p className={`text-sm text-gray-500 mt-1 ${task.completed ? 'line-through' : ''}`}>
+                  <p className={`text-sm text-gray-500 mt-1 line-clamp-2 ${task.completed ? 'line-through' : ''}`}>
                     {task.description}
                   </p>
                 )}
@@ -347,7 +347,7 @@ function TasksPage({ onCreateTask }) {
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-shrink-0 ml-auto">
                 <button className="text-gray-400 hover:text-gray-600">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

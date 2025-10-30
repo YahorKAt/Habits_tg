@@ -52,7 +52,7 @@ body {
 }
 
 .task-card {
-  @apply bg-white rounded-xl shadow-sm p-4 border border-gray-100;
+  @apply bg-white rounded-xl shadow-sm p-4 border border-gray-100 overflow-hidden;
 }
 
 .habit-item {
