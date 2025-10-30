@@ -3,11 +3,12 @@ load_dotenv()
 
 import json
 import os
+
 from typing import Dict, Any, Optional
 import logging
 
+from telegram_webapp_auth.auth import TelegramAuthenticator
 logger = logging.getLogger(__name__)
-
 
 def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]:
     """
@@ -20,7 +21,7 @@ def parse_and_validate_init_data(init_data_raw: str) -> Optional[Dict[str, Any]]
 
     try:
         from telegram_webapp_auth import TelegramWebAppAuth  # type: ignore
-        auth = TelegramWebAppAuth(bot_token)
+        auth = TelegramAuthenticator(bot_token)
         valid = auth.validate(init_data_raw)
         user_raw = valid.get("user") if isinstance(valid, dict) else None
         if isinstance(user_raw, dict):
