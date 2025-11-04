@@ -845,8 +845,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 // Компонент для страницы статистики
 function StatisticsPage() {
   const initData = useInitData()
-  const [period, setPeriod] = useState('week')
+  const [period, setPeriod] = useState('day') // Стартовый период - день
   const [stats, setStats] = useState(null)
+  const [habitsStats, setHabitsStats] = useState([])
   const [loading, setLoading] = useState(false)
 
   async function api(path) {
@@ -862,24 +863,34 @@ function StatisticsPage() {
     try {
       const data = await api(`/stats?period=${p}`)
       setStats(data)
+    } catch (error) {
+      console.error('Error loading stats:', error)
+      // Устанавливаем пустую статистику при ошибке
+      setStats({
+        completed: 0,
+        in_progress: 0,
+        upcoming: 0,
+        total: 0
+      })
     } finally {
       setLoading(false)
     }
   }
 
+  const loadHabitsStats = async () => {
+    try {
+      const data = await api('/habits')
+      setHabitsStats(data)
+    } catch (error) {
+      console.error('Error loading habits stats:', error)
+      setHabitsStats([])
+    }
+  }
+
   useEffect(() => {
     loadStats(period)
+    loadHabitsStats()
   }, [period])
-
-  // Данные для графика
-  const chartData = [
-    { name: 'Выполнено', value: 1, color: '#10B981' },
-    { name: 'В процессе', value: 2, color: '#8B5CF6' },
-    { name: 'Предстоящие', value: 0, color: '#3B82F6' },
-  ]
-
-  const totalTasks = chartData.reduce((sum, item) => sum + item.value, 0)
-  const completedPercentage = totalTasks > 0 ? Math.round((chartData[0].value / totalTasks) * 100) : 0
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -898,93 +909,94 @@ function StatisticsPage() {
               onChange={(e) => setPeriod(e.target.value)}
               className="bg-gray-100 rounded-lg px-3 py-1 text-sm"
             >
+              <option value="day">День</option>
               <option value="week">Неделя</option>
               <option value="month">Месяц</option>
-              <option value="year">Год</option>
+              <option value="all">Всего</option>
             </select>
           </div>
 
           <div className="flex items-center gap-6">
             {/* График */}
-            <div className="relative w-32 h-32">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={40}
-                    outerRadius={60}
-                    paddingAngle={0}
-                    dataKey="value"
-                  >
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{completedPercentage}%</div>
-                  <div className="text-xs text-gray-500">Выполнено</div>
+            {loading ? (
+              <div className="flex items-center justify-center w-32 h-32">
+                <div className="text-sm text-gray-400">Загрузка...</div>
+              </div>
+            ) : stats ? (
+              <div className="relative w-32 h-32">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={
+                        stats.total > 0 && stats.completed === stats.total
+                          ? [
+                            // Если 100% выполнено - показываем один полностью залитый круг
+                            { name: 'Выполнено', value: 100, color: '#10B981' },
+                          ]
+                          : [
+                            { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
+                            { name: 'В процессе', value: stats.in_progress || 0, color: '#8B5CF6' },
+                          ]
+                      }
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={false}
+                      outerRadius={50}
+                      innerRadius={0}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {(
+                        stats.total > 0 && stats.completed === stats.total
+                          ? [{ name: 'Выполнено', value: 100, color: '#10B981' }]
+                          : [
+                            { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
+                            { name: 'В процессе', value: stats.in_progress || 0, color: '#8B5CF6' },
+                          ]
+                      ).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+
+                {/* Центральный текст - только проценты */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-xl font-bold text-gray-800">
+                    {stats.total > 0 ? Math.round(((stats.completed || 0) / stats.total) * 100) : 0}%
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-center w-32 h-32">
+                <div className="text-sm text-gray-400">Нет данных</div>
+              </div>
+            )}
 
             {/* Легенда */}
-            <div className="space-y-2">
-              {chartData.map((item, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <span className="text-sm">{item.value} {item.name}</span>
-                </div>
-              ))}
+            <div className="flex-1 space-y-2">
+              {loading ? (
+                <div className="text-sm text-gray-500">Загрузка...</div>
+              ) : stats ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span className="text-sm text-gray-700">
+                      {stats.completed || 0} Выполнено
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                    <span className="text-sm text-gray-700">
+                      {stats.in_progress || 0} В процессе
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-gray-500">Нет данных</div>
+              )}
             </div>
-          </div>
-        </div>
-
-        {/* Расписание */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M8 2V5M16 2V5M3.5 9.09H20.5M21 8.5V17C21 18.1046 20.1046 19 19 19H5C3.89543 19 3 18.1046 3 17V8.5C3 7.39543 3.89543 6.5 5 6.5H19C20.1046 6.5 21 7.39543 21 8.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <h2 className="text-lg font-semibold">Ваше расписание</h2>
-            </div>
-            <button className="text-gray-400 hover:text-gray-600">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13M18.5 2.5C18.8978 2.10218 19.4374 1.87868 20 1.87868C20.5626 1.87868 21.1022 2.10218 21.5 2.5C21.8978 2.89782 22.1213 3.43739 22.1213 4C22.1213 4.56261 21.8978 5.10218 21.5 5.5L12 15L8 11L18.5 2.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Календарь дней недели */}
-          <div className="flex gap-2 overflow-x-auto">
-            {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, index) => (
-              <div key={day} className="flex-shrink-0 text-center">
-                <div className="text-xs text-gray-500 mb-1">{day}</div>
-                <div className={`calendar-day ${index === 2 ? 'selected' : ''}`}>
-                  {20 + index}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Сводка */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="card text-center">
-            <div className="text-3xl font-bold text-green-500 mb-1">{completedPercentage}%</div>
-            <div className="text-sm text-gray-500">Выполнено</div>
-          </div>
-          <div className="card text-center">
-            <div className="text-3xl font-bold text-red-500 mb-1">5</div>
-            <div className="text-sm text-gray-500">Серия дней</div>
           </div>
         </div>
 
@@ -992,31 +1004,53 @@ function StatisticsPage() {
         <div>
           <h2 className="text-lg font-semibold mb-4">Привычки</h2>
           <div className="space-y-3">
-            <div className="habit-item">
-              <div className="text-2xl">🏃</div>
-              <div className="flex-1">
-                <div className="font-medium">Спорт</div>
-                <div className="text-sm text-orange-500">Нет стрика</div>
+            {habitsStats.length === 0 ? (
+              <div className="text-center text-gray-500 py-4">
+                <div className="text-4xl mb-2">📋</div>
+                <div>Нет привычек</div>
               </div>
-              <div className="streak-dots">
-                {[...Array(7)].map((_, i) => (
-                  <div key={i} className="streak-dot inactive" />
-                ))}
-              </div>
-            </div>
+            ) : (
+              habitsStats.map((habit) => {
+                const categoryInfo = TASK_CATEGORIES[habit.category] || { name: habit.category, icon: '📋' }
+                const maxStreak = habit.max_streak || 0
+                const filledCircles = Math.min(maxStreak, 7)
+                const showFire = maxStreak > 7
 
-            <div className="habit-item">
-              <div className="text-2xl">📚</div>
-              <div className="flex-1">
-                <div className="font-medium">Учёба</div>
-                <div className="text-sm text-orange-500">1 день</div>
-              </div>
-              <div className="streak-dots">
-                {[...Array(7)].map((_, i) => (
-                  <div key={i} className={`streak-dot ${i === 6 ? 'active' : 'inactive'}`} />
-                ))}
-              </div>
-            </div>
+                // Форматируем текст стрика
+                let streakText = 'Нет стрика'
+                if (maxStreak === 1) {
+                  streakText = '1 день'
+                } else if (maxStreak > 1 && maxStreak <= 4) {
+                  streakText = `${maxStreak} дня`
+                } else if (maxStreak > 4 && maxStreak <= 7) {
+                  streakText = `${maxStreak} дней`
+                } else if (maxStreak > 7) {
+                  streakText = `${maxStreak} дней`
+                }
+
+                return (
+                  <div key={habit.category} className="habit-item">
+                    <div className="text-2xl">{categoryInfo.icon}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{categoryInfo.name}</div>
+                        {showFire && (
+                          <span className="text-sm bg-orange-500 text-white px-2 py-1 rounded-full flex items-center gap-1">
+                            🔥 {maxStreak}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-orange-500">{streakText}</div>
+                    </div>
+                    <div className="streak-dots">
+                      {[...Array(7)].map((_, i) => (
+                        <div key={i} className={`streak-dot ${i < filledCircles ? 'active' : 'inactive'}`} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       </div>

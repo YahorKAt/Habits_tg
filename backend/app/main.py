@@ -263,10 +263,16 @@ def update_subtask(subtask_id: int, payload: SubtaskUpdate, db: Session = Depend
     return subtask
 
 
+@app.get("/habits")
+def habits_stats(db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    from . import habits_stats
+    return habits_stats.get_habits_stats(db, user_id=user_id)
+
+
 @app.get("/stats")
 def stats(period: str, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    if period not in {"7", "30", "all"}:
-        raise HTTPException(status_code=400, detail="Invalid period")
+    if period not in {"day", "week", "month", "all"}:
+        raise HTTPException(status_code=400, detail="Invalid period. Must be: day, week, month, or all")
     return crud.get_stats(db, user_id=user_id, period=period)
 
 

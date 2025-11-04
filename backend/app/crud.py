@@ -185,7 +185,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     if has_changes:
         db.commit()
     
-    # Фильтруем задачи по выбранной дате
+    # Фильтруем задачи по выбранной дате и устанавливаем корректный статус выполнения для выбранной даты
     filtered_tasks = []
     for task in tasks:
         task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
@@ -199,6 +199,53 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             continue
         
         frequency = task.frequency
+        
+        # Определяем статус выполнения для выбранной даты
+        task_completed_for_date = False
+        
+        if frequency == 'daily':
+            # Ежедневные задачи - проверяем, была ли задача выполнена в выбранный день
+            if task.last_completed_date:
+                completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Задача выполнена только если last_completed_date совпадает с выбранным днем
+                task_completed_for_date = (completed_day == selected_day)
+            # Если это не прошлая дата (сегодня или будущее), используем текущий статус (после обновления выше)
+            elif not is_past_date:
+                task_completed_for_date = task.completed
+            # Для прошлых дат без last_completed_date - задача не выполнена
+            else:
+                task_completed_for_date = False
+        
+        elif frequency == 'weekly':
+            # Еженедельные задачи - проверяем, была ли задача выполнена в выбранную неделю
+            if task.last_completed_date:
+                completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                completed_week_start = completed_day - timedelta(days=completed_day.weekday())
+                selected_week_start = selected_day - timedelta(days=selected_day.weekday())
+                # Задача выполнена только если выбранный день в той же неделе, что и выполнение
+                task_completed_for_date = (selected_week_start == completed_week_start)
+            elif not is_past_date:
+                task_completed_for_date = task.completed
+        
+        elif frequency == 'monthly':
+            # Месячные задачи - проверяем, была ли задача выполнена в выбранный месяц
+            if task.last_completed_date:
+                completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                completed_month_start = completed_day.replace(day=1)
+                selected_month_start = selected_day.replace(day=1)
+                # Задача выполнена только если выбранный день в том же месяце, что и выполнение
+                task_completed_for_date = (selected_month_start == completed_month_start)
+            elif not is_past_date:
+                task_completed_for_date = task.completed
+        
+        # Обновляем статус задачи для выбранной даты
+        task.completed = task_completed_for_date
+        
+        # Для прошлых дат: если задача не выполнена для выбранной даты, все подзадачи тоже должны быть не выполнены
+        # (так как мы не знаем историю выполнения подзадач по датам)
+        if is_past_date and not task_completed_for_date:
+            for subtask in task.subtasks:
+                subtask.completed = False
         
         # Ежедневные задачи - показываем для всех дней после создания
         if frequency == 'daily':
@@ -215,7 +262,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 task_week_start = task_created_day - timedelta(days=task_created_day.weekday())
                 
                 # Если задача выполнена, проверяем неделю выполнения
-                if task.completed and task.last_completed_date:
+                if task.last_completed_date:
                     completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
                     completed_week_start = completed_day - timedelta(days=completed_day.weekday())
                     
@@ -240,7 +287,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 task_month_start = task_created_day.replace(day=1)
                 
                 # Если задача выполнена, проверяем месяц выполнения
-                if task.completed and task.last_completed_date:
+                if task.last_completed_date:
                     completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
                     completed_month_start = completed_day.replace(day=1)
                     
@@ -483,33 +530,119 @@ def update_subtask(db: Session, subtask_id: int, user_id: int, title: str):
 
 
 def get_stats(db: Session, user_id: int, period: str):
+    """
+    Получает статистику по задачам для указанного периода.
+    Учитывает только основные задачи, без подзадач.
+    Оптимизировано для быстрой работы с большим количеством задач.
+    
+    Периоды:
+    - "day" - сегодня
+    - "week" - текущая неделя
+    - "month" - текущий месяц
+    - "all" - все время
+    """
     from datetime import datetime, timedelta
-
+    
+    now = datetime.utcnow()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Определяем период фильтрации
     since = None
-    if period == "7":
-        since = datetime.utcnow() - timedelta(days=7)
-    elif period == "30":
-        since = datetime.utcnow() - timedelta(days=30)
-
-    task_query = select(func.count()).select_from(models.Task).where(
-        models.Task.user_id == user_id, models.Task.completed == True  # noqa: E712
-    )
-    subtask_query = select(func.count()).select_from(models.Subtask).join(models.Task, models.Subtask.task_id == models.Task.id).where(
-        models.Task.user_id == user_id, models.Subtask.completed == True  # noqa: E712
-    )
-
+    if period == "day":
+        since = today
+    elif period == "week":
+        # Начало текущей недели (понедельник)
+        since = today - timedelta(days=today.weekday())
+    elif period == "month":
+        # Начало текущего месяца
+        since = today.replace(day=1)
+    # elif period == "all": since остается None
+    
+    # Базовые условия для запроса
+    base_conditions = [
+        models.Task.user_id == user_id,
+        models.Task.deleted == False
+    ]
+    
     if since is not None:
-        task_query = task_query.where(models.Task.created_at >= since)
-        subtask_query = subtask_query.where(models.Subtask.created_at >= since)
-
-    tasks_completed = db.execute(task_query).scalar() or 0
-    subtasks_completed = db.execute(subtask_query).scalar() or 0
-
+        base_conditions.append(models.Task.created_at >= since)
+    
+    # Подсчитываем выполненные задачи (используя COUNT вместо загрузки всех задач)
+    completed_query = select(func.count()).select_from(models.Task).where(
+        *base_conditions,
+        models.Task.completed == True,  # noqa: E712
+        models.Task.last_completed_date.isnot(None)
+    )
+    
+    # Для периода "all" все выполненные задачи считаются выполненными
+    if period == "all":
+        completed = db.execute(completed_query).scalar() or 0
+        in_progress_query = select(func.count()).select_from(models.Task).where(
+            *base_conditions,
+            models.Task.completed == False  # noqa: E712
+        )
+        in_progress = db.execute(in_progress_query).scalar() or 0
+        upcoming = 0
+    else:
+        # Для других периодов нужно проверять дату выполнения
+        # Получаем только необходимые поля для фильтрации
+        tasks_query = select(
+            models.Task.completed,
+            models.Task.last_completed_date,
+            models.Task.created_at
+        ).where(*base_conditions)
+        
+        tasks = db.execute(tasks_query).all()
+        
+        completed = 0
+        in_progress = 0
+        upcoming = 0
+        
+        for task_row in tasks:
+            task_completed, task_last_completed, task_created = task_row
+            
+            if task_completed and task_last_completed:
+                completed_date = task_last_completed.replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # Для периода "day" проверяем, что задача выполнена сегодня
+                if period == "day":
+                    if completed_date == today:
+                        completed += 1
+                    else:
+                        in_progress += 1
+                # Для периода "week" проверяем, что задача выполнена на этой неделе
+                elif period == "week":
+                    week_start = today - timedelta(days=today.weekday())
+                    completed_week_start = completed_date - timedelta(days=completed_date.weekday())
+                    if completed_week_start == week_start:
+                        completed += 1
+                    else:
+                        in_progress += 1
+                # Для периода "month" проверяем, что задача выполнена в этом месяце
+                elif period == "month":
+                    month_start = today.replace(day=1)
+                    completed_month_start = completed_date.replace(day=1)
+                    if completed_month_start == month_start:
+                        completed += 1
+                    else:
+                        in_progress += 1
+            # Невыполненные задачи
+            else:
+                task_created_day = task_created.replace(hour=0, minute=0, second=0, microsecond=0) if task_created else None
+                
+                if task_created_day and since and task_created_day >= since:
+                    # Задача создана в этом периоде и не выполнена - в процессе
+                    in_progress += 1
+                elif task_created_day and since and task_created_day < since:
+                    # Задача создана до периода и не выполнена - предстоящая
+                    upcoming += 1
+    
     return {
         "period": period,
-        "tasks_completed": tasks_completed,
-        "subtasks_completed": subtasks_completed,
-        "total_completed": tasks_completed + subtasks_completed,
+        "completed": completed,
+        "in_progress": in_progress,
+        "upcoming": upcoming,
+        "total": completed + in_progress + upcoming,
     }
 
 

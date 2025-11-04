@@ -67,6 +67,12 @@ class StatsOut(BaseModel):
     total_completed: int
 
 
+class HabitStatsOut(BaseModel):
+    category: str
+    max_streak: int
+    has_tasks: bool
+
+
 class NoteCreate(BaseModel):
     content: str
     date: str  # YYYY-MM-DD
