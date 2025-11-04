@@ -37,14 +37,21 @@ def init_db() -> None:
     from . import models  # noqa: F401
     try:
         # Создаем таблицы если их нет
+        logger.info("🔧 Создание/проверка таблиц базы данных...")
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Database tables created/verified")
         
         # Применяем миграции
+        logger.info("🔧 Применение миграций базы данных...")
         from . import migrations
         db = SessionLocal()
         try:
             migrations.migrate_all(db)
+        except Exception as migration_error:
+            logger.error(f"❌ Ошибка при применении миграций: {migration_error}", exc_info=True)
+            # Не прерываем запуск приложения, но логируем ошибку
+            # Попробуем еще раз через несколько секунд
+            raise
         finally:
             db.close()
             

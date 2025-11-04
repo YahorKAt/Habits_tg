@@ -127,6 +127,24 @@ def health_full() -> JSONResponse:
     return JSONResponse(diagnostics)
 
 
+@app.post("/migrate")
+def run_migrations_endpoint(db: Session = Depends(get_db)) -> JSONResponse:
+    """Ручной запуск миграций базы данных"""
+    try:
+        from . import migrations
+        migrations.migrate_all(db)
+        return JSONResponse({
+            "status": "ok",
+            "message": "Migrations applied successfully"
+        })
+    except Exception as e:
+        logger.error(f"Migration failed: {e}", exc_info=True)
+        return JSONResponse({
+            "status": "error",
+            "message": str(e)
+        }, status_code=500)
+
+
 @app.post("/task")
 def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
     try:
