@@ -21,19 +21,21 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Habits Mini App API")
 
+# CORS настройки для Railway
 origins = [
-    "https://habits-tg.vercel.app",  # ваш домен Vercel
-    "backend-production-cd9a.up.railway.app",  # Railway
-    "https://*.telegram.org",
-    "https://t.me",
+    "https://habits-tg.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,  # Явно указываем разрешенные домены
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
