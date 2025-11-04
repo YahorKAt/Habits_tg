@@ -35,7 +35,18 @@ Base = declarative_base()
 def init_db() -> None:
     from . import models  # noqa: F401
     try:
+        # Создаем таблицы если их нет
         Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created/verified")
+        
+        # Применяем миграции
+        from . import migrations
+        db = SessionLocal()
+        try:
+            migrations.migrate_all(db)
+        finally:
+            db.close()
+            
         logger.info("✅ Database initialized successfully")
     except Exception as e:
         logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
