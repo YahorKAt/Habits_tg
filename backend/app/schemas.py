@@ -22,6 +22,10 @@ class SubtaskCreate(BaseModel):
     title: str
 
 
+class SubtaskUpdate(BaseModel):
+    title: str
+
+
 class SubtaskOut(BaseModel):
     id: int
     task_id: int
@@ -47,6 +51,9 @@ class TaskOut(BaseModel):
     last_completed_date: Optional[datetime]
     category: str
     frequency: str
+    streak: int = 0
+    deleted: bool = False
+    deleted_at: Optional[datetime] = None
     subtasks: List[SubtaskOut] = []
 
     class Config:

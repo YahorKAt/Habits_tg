@@ -74,10 +74,21 @@ Full-stack Telegram Mini App for habit tracking with modern UI design, statistic
 
 ## Environment Variables
 
+### Backend
 - `DEV_MODE=true`: Enables development mode (skips strict auth)
 - `DEV_USER_ID=1`: User ID for development mode
 - `BOT_TOKEN`: Your Telegram bot token
 - `WEBAPP_URL`: URL where your frontend is hosted
+
+### Frontend
+- `VITE_API_URL`: URL бэкенд API (по умолчанию в DEV режиме используется `http://localhost:8000`)
+
+**Для локальной разработки:**
+1. Создайте файл `frontend/.env` с содержимым:
+   ```
+   VITE_API_URL=http://localhost:8000
+   ```
+2. Или просто используйте дефолтное значение - в DEV режиме автоматически используется `http://localhost:8000`
 
 ## Notes
 - Uses Telegram WebApp API for auth via `X-Telegram-Init-Data` header
@@ -102,9 +113,9 @@ run_backend.bat
 cd backend
 python -m venv .venv && .venv\\Scripts\\activate
 pip install -r requirements.txt
-set DEV_MODE=true 
+set DEV_MODE=true
 set DEV_USER_ID=1
-set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ1
+set BOT_TOKEN=8294461897:AAEdrDJDWFPylUnv3P-dN60ImlQf1vrtr6A
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -114,17 +125,46 @@ cd backend
 python migrate_db.py
 ```
 
+**Проверка подключения к БД:**
+После запуска бэкенда проверьте:
+```bash
+# Проверка общего здоровья API
+curl http://localhost:8000/health
+
+# Проверка подключения к БД
+curl http://localhost:8000/health/db
+
+# Полная диагностика (импорты, переменные окружения)
+curl http://localhost:8000/health/full
+```
+
+**Устранение ошибки 503:**
+Если получаете 503 ошибку, проверьте:
+1. ✅ Бэкенд запущен (проверьте консоль на ошибки)
+2. ✅ Все зависимости установлены: `pip install -r requirements.txt`
+3. ✅ База данных доступна (проверьте `/health/db`)
+4. ✅ DEV_MODE установлен (проверьте `/health/full`)
+
+Также проверьте логи бэкенда на наличие ошибок импорта или подключения к БД.
+
 ### 3. Frontend
+
+**Локальная разработка (DEV режим):**
+
 ```bash
 cd frontend
 npm i
 npm run dev
 ```
 
+**Особенности DEV режима:**
+- Автоматически использует `http://localhost:8000` как API URL (если не указан `VITE_API_URL`)
+- Работает без Telegram WebApp (можно разрабатывать в браузере)
+- Использует мок-данные для `initData` если Telegram недоступен
+- Все запросы идут на локальный бэкенд
+
 ### 4. Expose with localtunnel
 ```bash
-# New terminal for backend
-lt --port 8000
 
 # New terminal for frontend  
 lt --port 5173
@@ -138,6 +178,6 @@ run_bot.bat
 # Option 2: Manual setup
 cd bot
 pip install -r requirements.txt
-set BOT_TOKEN=8294461897:AAGmR53gKOlz1-O8c-1aDRh6prSoLIrS0TQ
-set WEBAPP_URL= https://fresh-hairs-judge.loca.lt
+set BOT_TOKEN=8294461897:AAEdrDJDWFPylUnv3P-dN60ImlQf1vrtr6A
+set WEBAPP_URL=https://every-adults-occur.loca.lt
 python example_bot.py
