@@ -85,7 +85,7 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
     if not task:
         return False
     task.deleted = True
-    task.deleted_at = datetime.utcnow()
+    task.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return True
 
@@ -98,16 +98,26 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     Args:
         selected_date: Дата для фильтрации задач (если None - используется текущая дата)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if selected_date is None:
         selected_date = now
     
-    # Подготавливаем нормализованные даты один раз
+    # Подготавливаем нормализованные даты один раз (timezone-aware)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    selected_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    selected_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0) if selected_date.tzinfo else selected_date.replace(tzinfo=timezone.utc, hour=0, minute=0, second=0, microsecond=0)
     current_week_start = now - timedelta(days=now.weekday())
     current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
     current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    # Убеждаемся, что все даты timezone-aware
+    if selected_day.tzinfo is None:
+        selected_day = selected_day.replace(tzinfo=timezone.utc)
+    if today.tzinfo is None:
+        today = today.replace(tzinfo=timezone.utc)
+    if current_week_start.tzinfo is None:
+        current_week_start = current_week_start.replace(tzinfo=timezone.utc)
+    if current_month_start.tzinfo is None:
+        current_month_start = current_month_start.replace(tzinfo=timezone.utc)
     
     # Получаем все задачи одним запросом с eager loading подзадач
     # Для текущей даты исключаем удаленные задачи, для прошлых дат включаем их
@@ -145,6 +155,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             # Проверяем, был ли уже новый день после последнего выполнения
             if task.last_completed_date:
                 last_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Убеждаемся, что last_day timezone-aware для сравнения
+                if last_day.tzinfo is None:
+                    last_day = last_day.replace(tzinfo=timezone.utc)
                 if last_day < today:
                     # Ежедневные задачи всегда сбрасываются на новый день
                     task.completed = False
@@ -166,6 +179,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 # Выполненные еженедельные задачи переносятся только при начале новой недели
                 last_week_start = task.last_completed_date - timedelta(days=task.last_completed_date.weekday())
                 last_week_start = last_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Убеждаемся, что last_week_start timezone-aware
+                if last_week_start.tzinfo is None:
+                    last_week_start = last_week_start.replace(tzinfo=timezone.utc)
                 if last_week_start < current_week_start:
                     task.completed = False
                     has_changes = True
@@ -177,6 +193,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             if task.completed and task.last_completed_date:
                 # Выполненные месячные задачи переносятся только при начале нового месяца
                 last_month_start = task.last_completed_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                # Убеждаемся, что last_month_start timezone-aware
+                if last_month_start.tzinfo is None:
+                    last_month_start = last_month_start.replace(tzinfo=timezone.utc)
                 if last_month_start < current_month_start:
                     task.completed = False
                     has_changes = True
@@ -189,6 +208,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     filtered_tasks = []
     for task in tasks:
         task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
+        # Убеждаемся, что task_created_day timezone-aware для сравнения
+        if task_created_day and task_created_day.tzinfo is None:
+            task_created_day = task_created_day.replace(tzinfo=timezone.utc)
         
         # Задача не может быть показана для дней до её создания
         if task_created_day and selected_day < task_created_day:
@@ -207,6 +229,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             # Ежедневные задачи - проверяем, была ли задача выполнена в выбранный день
             if task.last_completed_date:
                 completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Убеждаемся, что completed_day timezone-aware для сравнения
+                if completed_day.tzinfo is None:
+                    completed_day = completed_day.replace(tzinfo=timezone.utc)
                 # Задача выполнена только если last_completed_date совпадает с выбранным днем
                 task_completed_for_date = (completed_day == selected_day)
             # Если это не прошлая дата (сегодня или будущее), используем текущий статус (после обновления выше)
@@ -220,6 +245,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             # Еженедельные задачи - проверяем, была ли задача выполнена в выбранную неделю
             if task.last_completed_date:
                 completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Убеждаемся, что completed_day timezone-aware
+                if completed_day.tzinfo is None:
+                    completed_day = completed_day.replace(tzinfo=timezone.utc)
                 completed_week_start = completed_day - timedelta(days=completed_day.weekday())
                 selected_week_start = selected_day - timedelta(days=selected_day.weekday())
                 # Задача выполнена только если выбранный день в той же неделе, что и выполнение
@@ -231,6 +259,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             # Месячные задачи - проверяем, была ли задача выполнена в выбранный месяц
             if task.last_completed_date:
                 completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Убеждаемся, что completed_day timezone-aware
+                if completed_day.tzinfo is None:
+                    completed_day = completed_day.replace(tzinfo=timezone.utc)
                 completed_month_start = completed_day.replace(day=1)
                 selected_month_start = selected_day.replace(day=1)
                 # Задача выполнена только если выбранный день в том же месяце, что и выполнение
@@ -264,6 +295,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 # Если задача выполнена, проверяем неделю выполнения
                 if task.last_completed_date:
                     completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    # Убеждаемся, что completed_day timezone-aware
+                    if completed_day.tzinfo is None:
+                        completed_day = completed_day.replace(tzinfo=timezone.utc)
                     completed_week_start = completed_day - timedelta(days=completed_day.weekday())
                     
                     # Показываем только если выбранный день в неделе выполнения
@@ -289,6 +323,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 # Если задача выполнена, проверяем месяц выполнения
                 if task.last_completed_date:
                     completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                    # Убеждаемся, что completed_day timezone-aware
+                    if completed_day.tzinfo is None:
+                        completed_day = completed_day.replace(tzinfo=timezone.utc)
                     completed_month_start = completed_day.replace(day=1)
                     
                     # Показываем только если выбранный день в месяце выполнения
@@ -310,7 +347,7 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool)
     if not task:
         return None
     
-    completion_date = datetime.utcnow()
+    completion_date = datetime.now(timezone.utc)
     
     if completed:
         task.last_completed_date = completion_date
@@ -361,7 +398,7 @@ def calculate_streak_on_complete(task: models.Task, completion_date: datetime = 
     Если задача была выполнена в предыдущем периоде - стрик продолжается, иначе сбрасывается или начинается с 1.
     """
     if completion_date is None:
-        completion_date = datetime.utcnow()
+        completion_date = datetime.now(timezone.utc)
     
     # Приводим к UTC
     if completion_date.tzinfo is None:
@@ -447,15 +484,18 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
         return 0
     
     if now is None:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
     
-    # Приводим к UTC
+    # Приводим к UTC (timezone-aware)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    if task.last_completed_date.tzinfo is None:
-        last_completed = task.last_completed_date.replace(tzinfo=timezone.utc)
+    if task.last_completed_date:
+        if task.last_completed_date.tzinfo is None:
+            last_completed = task.last_completed_date.replace(tzinfo=timezone.utc)
+        else:
+            last_completed = task.last_completed_date
     else:
-        last_completed = task.last_completed_date
+        return 0
     
     frequency = task.frequency
     
@@ -541,9 +581,7 @@ def get_stats(db: Session, user_id: int, period: str):
     - "month" - текущий месяц
     - "all" - все время
     """
-    from datetime import datetime, timedelta
-    
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     
     # Определяем период фильтрации
