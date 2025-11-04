@@ -36,6 +36,13 @@ class Task(Base):
 
     # Поле для частоты выполнения
     frequency = Column(String(20), default='daily', nullable=False)  # daily, weekly, monthly
+    
+    # Поле для стрика (количество последовательных выполнений)
+    streak = Column(Integer, default=0, nullable=False)
+    
+    # Поле для мягкого удаления (архивирование)
+    deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     subtasks = relationship("Subtask", cascade="all, delete-orphan", back_populates="task")
 

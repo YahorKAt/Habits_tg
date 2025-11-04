@@ -48,13 +48,32 @@ function useInitData() {
 }
 
 // Компонент для создания новой задачи
-function CreateTaskPage({ onBack, onTaskCreated }) {
+function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
   const initData = useInitData()
+  const isEditing = task !== null
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('personal')
   const [frequency, setFrequency] = useState('daily')
   const [loading, setLoading] = useState(false)
+
+
+  // Инициализация полей при редактировании
+  useEffect(() => {
+    if (isEditing && task) {
+      setTitle(task.title || '')
+      setDescription(task.description || '')
+      setCategory(task.category || 'personal')
+      setFrequency(task.frequency || 'daily')
+    } else {
+      // Сброс при создании новой задачи
+      setTitle('')
+      setDescription('')
+      setCategory('personal')
+      setFrequency('daily')
+    }
+  }, [isEditing, task])
+
   async function api(path, options = {}) {
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
@@ -73,20 +92,34 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
 
     setLoading(true)
     try {
-      await api('/task', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          category: category,
-          frequency: frequency,
+      if (isEditing) {
+        // Обновление существующей задачи
+        await api(`/task/${task.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            title: title.trim(),
+            description: description.trim(),
+            category: category,
+            frequency: frequency,
+          })
         })
-      })
+      } else {
+        // Создание новой задачи
+        await api('/task', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: title.trim(),
+            description: description.trim(),
+            category: category,
+            frequency: frequency,
+          })
+        })
+      }
 
       onTaskCreated()
     } catch (error) {
-      console.error('Error creating task:', error)
-      alert('Ошибка при создании задачи')
+      console.error(`Error ${isEditing ? 'updating' : 'creating'} task:`, error)
+      alert(`Ошибка при ${isEditing ? 'обновлении' : 'создании'} задачи`)
     } finally {
       setLoading(false)
     }
@@ -102,7 +135,7 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
               <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <h1 className="text-xl font-semibold">Новая задача</h1>
+          <h1 className="text-xl font-semibold">{isEditing ? 'Редактировать задачу' : 'Новая задача'}</h1>
         </div>
         {/* <p className="text-gray-600 text-sm mt-1">Создайте задачу для отслеживания</p> */}
       </div>
@@ -192,7 +225,135 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {loading ? 'Создание...' : 'Создать задачу'}
+            {loading ? (isEditing ? 'Сохранение...' : 'Создание...') : (isEditing ? 'Сохранить изменения' : 'Создать задачу')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Компонент для создания/редактирования подзадачи
+function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = null }) {
+  const initData = useInitData()
+  const isEditing = subtask !== null
+  const [title, setTitle] = useState(subtask?.title || '')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (isEditing && subtask) {
+      setTitle(subtask.title || '')
+    } else {
+      setTitle('')
+    }
+  }, [isEditing, subtask])
+
+  async function api(path, options = {}) {
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Telegram-Init-Data': initData,
+        ...(options.headers || {})
+      }
+    })
+    if (!res.ok) throw new Error(await res.text())
+    return await res.json()
+  }
+
+  const createSubtask = async () => {
+    if (!title.trim()) return
+
+    setLoading(true)
+    try {
+      if (isEditing) {
+        // Обновление подзадачи
+        await api(`/subtask/${subtask.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            title: title.trim(),
+          })
+        })
+        onSubtaskCreated()
+      } else {
+        await api('/subtask', {
+          method: 'POST',
+          body: JSON.stringify({
+            task_id: parentTask.id,
+            title: title.trim(),
+          })
+        })
+
+        onSubtaskCreated()
+      }
+    } catch (error) {
+      console.error(`Error ${isEditing ? 'updating' : 'creating'} subtask:`, error)
+      alert(`Ошибка при ${isEditing ? 'обновлении' : 'создании'} подзадачи`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white px-4 py-4 border-b border-gray-100">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="text-gray-600">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <h1 className="text-xl font-semibold">{isEditing ? 'Редактировать подзадачу' : 'Новая подзадача'}</h1>
+        </div>
+        <p className="text-gray-600 text-sm mt-1">
+          Для задачи: {parentTask?.title}
+        </p>
+      </div>
+
+      <div className="p-4 space-y-6 pb-28">
+        {/* Информация о родительской задаче */}
+        <div className="card bg-gray-50">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{TASK_CATEGORIES[parentTask?.category]?.icon || '📋'}</span>
+            <div>
+              <div className="text-sm font-medium text-gray-700">
+                {TASK_CATEGORIES[parentTask?.category]?.name || 'Общее'}
+              </div>
+              <div className="text-xs text-gray-500">
+                Группа автоматически совпадает с основной задачей
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Название подзадачи */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Название подзадачи</label>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            className="input"
+            placeholder="Введите название подзадачи"
+          />
+        </div>
+      </div>
+
+      {/* Bottom buttons */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
+        <div className="flex gap-3">
+          <button onClick={onBack} className="btn-secondary flex-1">
+            Отмена
+          </button>
+          <button
+            onClick={createSubtask}
+            disabled={!title.trim() || loading}
+            className="btn flex-1 flex items-center justify-center gap-2"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {loading ? (isEditing ? 'Сохранение...' : 'Создание...') : (isEditing ? 'Сохранить изменения' : 'Создать подзадачу')}
           </button>
         </div>
       </div>
@@ -201,13 +362,15 @@ function CreateTaskPage({ onBack, onTaskCreated }) {
 }
 
 // Компонент для страницы задач
-function TasksPage({ onCreateTask }) {
+function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, onEditSubtask }) {
   const initData = useInitData()
   const [tasks, setTasks] = useState([])
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const ribbonRef = useRef(null)
+  const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
+
 
   async function api(path, options = {}) {
     const res = await fetch(`${API_URL}${path}`, {
@@ -225,16 +388,38 @@ function TasksPage({ onCreateTask }) {
   const loadTasks = async () => {
     setLoading(true)
     try {
-      const data = await api('/tasks')
+      // Форматируем выбранную дату для запроса
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      const data = await api(`/tasks?date=${dateStr}`)
       setTasks(data)
     } finally {
       setLoading(false)
     }
   }
 
+  const loadTasksRef = useRef(null)
+  loadTasksRef.current = loadTasks
+
   useEffect(() => {
     loadTasks()
-  }, [])
+  }, [selectedDate]) // Перезагружаем задачи при изменении выбранной даты
+
+  // Перезагружаем задачи при монтировании компонента (ключ изменился)
+  // Это обеспечит актуальный список после возврата со страницы редактирования
+
+  // Передаем функцию обновления наверх
+  useEffect(() => {
+    if (onTaskUpdated) {
+      onTaskUpdated(() => {
+        if (loadTasksRef.current) {
+          loadTasksRef.current()
+        }
+      })
+    }
+  }, [onTaskUpdated])
+
+  // // Бэкенд уже фильтрует задачи по выбранной дате, поэтому используем все полученные задачи
+  // const tasksForSelectedDay = tasks
 
   const tasksForSelectedDay = useMemo(() => {
     const start = new Date(selectedDate)
@@ -279,7 +464,42 @@ function TasksPage({ onCreateTask }) {
   const toggleTask = async (task) => {
     try {
       const updated = await api(`/task/${task.id}/complete`, { method: 'POST' })
-      setTasks(prev => prev.map(t => t.id === task.id ? updated : t))
+
+      // Если задача отменяется (completed стал false), отменяем все подзадачи
+      if (!updated.completed && task.subtasks && task.subtasks.length > 0) {
+        // Отменяем все выполненные подзадачи
+        const uncompletedSubtasks = task.subtasks.map(async (subtask) => {
+          if (subtask.completed) {
+            try {
+              return await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
+            } catch (error) {
+              console.error(`Error uncompleting subtask ${subtask.id}:`, error)
+              return subtask
+            }
+          }
+          return subtask
+        })
+
+        // Ждем завершения всех операций и обновляем подзадачи
+        const updatedSubtasks = await Promise.all(uncompletedSubtasks)
+
+        setTasks(prev => prev.map(t => {
+          if (t.id === task.id) {
+            // Сохраняем подзадачи при обновлении задачи
+            return { ...updated, subtasks: updatedSubtasks }
+          }
+          return t
+        }))
+      } else {
+        // Если задача выполняется или нет подзадач, просто обновляем
+        setTasks(prev => prev.map(t => {
+          if (t.id === task.id) {
+            // Сохраняем подзадачи если они есть
+            return { ...updated, subtasks: t.subtasks || [] }
+          }
+          return t
+        }))
+      }
     } catch (error) {
       console.error('Error toggling task:', error)
     }
@@ -291,6 +511,113 @@ function TasksPage({ onCreateTask }) {
       setTasks(prev => prev.filter(t => t.id !== task.id))
     } catch (error) {
       console.error('Error deleting task:', error)
+    }
+  }
+
+  const toggleExpanded = (taskId) => {
+    setExpandedTasks(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId)
+      } else {
+        newSet.add(taskId)
+      }
+      return newSet
+    })
+  }
+
+  const toggleSubtask = async (subtask, parentTask) => {
+    try {
+      const updated = await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
+
+      // Обновляем подзадачу в задаче
+      setTasks(prev => prev.map(t => {
+        if (t.id === parentTask.id) {
+          const updatedSubtasks = (t.subtasks || []).map(st =>
+            st.id === subtask.id ? updated : st
+          )
+
+          // Проверяем, все ли подзадачи выполнены
+          const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
+
+          // Если все подзадачи выполнены и задача еще не выполнена, автоматически отмечаем задачу
+          if (allCompleted && !t.completed) {
+            // Автоматически отмечаем задачу через API
+            api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
+              // Обновляем задачу в списке, сохраняя подзадачи
+              setTasks(prevTasks => prevTasks.map(task => {
+                if (task.id === updatedTask.id) {
+                  // Сохраняем подзадачи при обновлении задачи
+                  return { ...updatedTask, subtasks: updatedSubtasks }
+                }
+                return task
+              }))
+            }).catch(error => {
+              console.error('Error auto-completing task:', error)
+            })
+          }
+          // Если хотя бы одна подзадача не выполнена и задача выполнена, автоматически отменяем задачу
+          else if (!allCompleted && t.completed) {
+            // Автоматически отменяем задачу через API
+            api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
+              // Обновляем задачу в списке, сохраняя подзадачи
+              setTasks(prevTasks => prevTasks.map(task => {
+                if (task.id === updatedTask.id) {
+                  // Сохраняем подзадачи при обновлении задачи
+                  return { ...updatedTask, subtasks: updatedSubtasks }
+                }
+                return task
+              }))
+            }).catch(error => {
+              console.error('Error auto-uncompleting task:', error)
+            })
+          }
+
+          return { ...t, subtasks: updatedSubtasks }
+        }
+        return t
+      }))
+    } catch (error) {
+      console.error('Error toggling subtask:', error)
+    }
+  }
+
+  const deleteSubtask = async (subtaskId, parentTaskId) => {
+    try {
+      await api(`/subtask/${subtaskId}`, { method: 'DELETE' })
+      setTasks(prev => prev.map(t => {
+        if (t.id === parentTaskId) {
+          const updatedSubtasks = (t.subtasks || []).filter(st => st.id !== subtaskId)
+
+          // Проверяем, все ли оставшиеся подзадачи выполнены
+          const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
+
+          // Если задача была выполнена, но теперь не все подзадачи выполнены, отменяем задачу
+          if (!allCompleted && t.completed) {
+            // Автоматически отменяем задачу через API
+            api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
+              // Обновляем задачу в списке, сохраняя подзадачи
+              setTasks(prevTasks => prevTasks.map(task => {
+                if (task.id === updatedTask.id) {
+                  // Сохраняем подзадачи при обновлении задачи
+                  return { ...updatedTask, subtasks: updatedSubtasks }
+                }
+                return task
+              }))
+            }).catch(error => {
+              console.error('Error auto-uncompleting task after subtask deletion:', error)
+            })
+          }
+
+          return {
+            ...t,
+            subtasks: updatedSubtasks
+          }
+        }
+        return t
+      }))
+    } catch (error) {
+      console.error('Error deleting subtask:', error)
     }
   }
 
@@ -352,7 +679,10 @@ function TasksPage({ onCreateTask }) {
           <div key={task.id} className="task-card overflow-hidden">
             <div className="flex gap-3 items-start">
               <button
-                onClick={() => toggleTask(task)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleTask(task)
+                }}
                 className={`mt-1 w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors ${task.completed ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-orange-400 text-transparent'}`}
                 aria-pressed={task.completed}
               >
@@ -360,20 +690,22 @@ function TasksPage({ onCreateTask }) {
                   <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
+              <div
+                className="flex-1 min-w-0 cursor-pointer"
+                onClick={() => onEditTask(task)}
+              >
 
-              <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2 gap-y-2 mb-2">
                   <span className="text-lg">{TASK_CATEGORIES[task.category]?.icon || '📋'}</span>
-                  <span className="text-sm bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-                    {TASK_CATEGORIES[task.category]?.name || 'Общее'}
-                  </span>
                   <span className="text-sm bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
                     {task.frequency === 'daily' ? 'Ежедневно' :
                       task.frequency === 'weekly' ? 'Еженедельно' : 'Ежемесячно'}
                   </span>
-                  <span className="text-sm bg-orange-500 text-white px-2 py-1 rounded-full flex items-center gap-1">
-                    🔥 3
-                  </span>
+                  {task.streak > 1 && (
+                    <span className="text-sm bg-orange-500 text-white px-2 py-1 rounded-full flex items-center gap-1">
+                      🔥 {task.streak}
+                    </span>
+                  )}
                 </div>
 
                 <h3 className={`font-medium truncate ${task.completed ? 'line-through text-gray-500' : ''}`}>
@@ -394,49 +726,134 @@ function TasksPage({ onCreateTask }) {
               </div>
 
               <div className="flex gap-2 flex-shrink-0 ml-auto">
-                <button className="text-gray-400 hover:text-gray-600">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                    <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-                <button className="text-gray-400 hover:text-gray-600">
+                {task.subtasks && task.subtasks.length > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleExpanded(task.id)
+                    }}
+                    className="text-gray-400 hover:text-gray-600 transition-transform"
+                    style={{ transform: expandedTasks.has(task.id) ? 'rotate(90deg)' : 'none' }}
+                    title={expandedTasks.has(task.id) ? 'Свернуть подзадачи' : 'Развернуть подзадачи'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (onCreateSubtask) {
+                      onCreateSubtask(task)
+                    }
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                  title="Добавить подзадачу"
+                >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-                <button onClick={() => deleteTask(task)} className="text-red-400 hover:text-red-600">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    deleteTask(task)
+                  }}
+                  className="text-red-400 hover:text-red-600"
+                >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
               </div>
-            </div>
-          </div>
-        ))}
+            </div >
 
-        {filteredTasks.length === 0 && !loading && (
-          <div className="text-center text-gray-500 py-8">
-            <div className="text-4xl mb-2">📋</div>
-            <div>Нет задач</div>
-          </div>
-        )}
-      </div>
+            {/* Список подзадач */}
+            {
+              expandedTasks.has(task.id) && task.subtasks && task.subtasks.length > 0 && (
+                <div className="mt-3 ml-8 space-y-2 border-l-2 border-gray-200 pl-4">
+                  {task.subtasks.map(subtask => (
+                    <div key={subtask.id} className="flex items-center gap-3 py-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleSubtask(subtask, task)
+                        }}
+                        className={`w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors flex-shrink-0 ${subtask.completed
+                          ? 'bg-orange-500 border-orange-500 text-white'
+                          : 'bg-white border-orange-400 text-transparent'
+                          }`}
+                        aria-pressed={subtask.completed}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                          <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+
+                      <div
+                        className="flex-1 min-w-0 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (onEditSubtask) {
+                            onEditSubtask(subtask, task)
+                          }
+                        }}
+                      >
+                        <h4 className={`text-sm ${subtask.completed ? 'line-through text-gray-500' : 'text-gray-700'}`}>
+                          {subtask.title}
+                        </h4>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (confirm('Удалить подзадачу?')) {
+                            deleteSubtask(subtask.id, task.id)
+                          }
+                        }}
+                        className="text-red-400 hover:text-red-600 flex-shrink-0"
+                        title="Удалить подзадачу"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                          <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+          </div >
+        ))
+        }
+
+        {
+          filteredTasks.length === 0 && !loading && (
+            <div className="text-center text-gray-500 py-8">
+              <div className="text-4xl mb-2">📋</div>
+              <div>Нет задач</div>
+            </div>
+          )
+        }
+      </div >
 
       {/* Floating Action Button */}
-      <button onClick={onCreateTask} className="floating-btn">
+      < button onClick={onCreateTask} className="floating-btn" >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-      </button>
-    </div>
+      </button >
+    </div >
   )
 }
 
 // Компонент для страницы статистики
 function StatisticsPage() {
   const initData = useInitData()
-  const [period, setPeriod] = useState('week')
+  const [period, setPeriod] = useState('day') // Стартовый период - день
   const [stats, setStats] = useState(null)
+  const [habitsStats, setHabitsStats] = useState([])
   const [loading, setLoading] = useState(false)
 
   async function api(path) {
@@ -452,24 +869,34 @@ function StatisticsPage() {
     try {
       const data = await api(`/stats?period=${p}`)
       setStats(data)
+    } catch (error) {
+      console.error('Error loading stats:', error)
+      // Устанавливаем пустую статистику при ошибке
+      setStats({
+        completed: 0,
+        in_progress: 0,
+        upcoming: 0,
+        total: 0
+      })
     } finally {
       setLoading(false)
     }
   }
 
+  const loadHabitsStats = async () => {
+    try {
+      const data = await api('/habits')
+      setHabitsStats(data)
+    } catch (error) {
+      console.error('Error loading habits stats:', error)
+      setHabitsStats([])
+    }
+  }
+
   useEffect(() => {
     loadStats(period)
+    loadHabitsStats()
   }, [period])
-
-  // Данные для графика
-  const chartData = [
-    { name: 'Выполнено', value: 1, color: '#10B981' },
-    { name: 'В процессе', value: 2, color: '#8B5CF6' },
-    { name: 'Предстоящие', value: 0, color: '#3B82F6' },
-  ]
-
-  const totalTasks = chartData.reduce((sum, item) => sum + item.value, 0)
-  const completedPercentage = totalTasks > 0 ? Math.round((chartData[0].value / totalTasks) * 100) : 0
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -488,93 +915,94 @@ function StatisticsPage() {
               onChange={(e) => setPeriod(e.target.value)}
               className="bg-gray-100 rounded-lg px-3 py-1 text-sm"
             >
+              <option value="day">День</option>
               <option value="week">Неделя</option>
               <option value="month">Месяц</option>
-              <option value="year">Год</option>
+              <option value="all">Всего</option>
             </select>
           </div>
 
           <div className="flex items-center gap-6">
             {/* График */}
-            <div className="relative w-32 h-32">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={40}
-                    outerRadius={60}
-                    paddingAngle={0}
-                    dataKey="value"
-                  >
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{completedPercentage}%</div>
-                  <div className="text-xs text-gray-500">Выполнено</div>
+            {loading ? (
+              <div className="flex items-center justify-center w-32 h-32">
+                <div className="text-sm text-gray-400">Загрузка...</div>
+              </div>
+            ) : stats ? (
+              <div className="relative w-32 h-32">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={
+                        stats.total > 0 && stats.completed === stats.total
+                          ? [
+                            // Если 100% выполнено - показываем один полностью залитый круг
+                            { name: 'Выполнено', value: 100, color: '#10B981' },
+                          ]
+                          : [
+                            { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
+                            { name: 'В процессе', value: stats.in_progress || 0, color: '#8B5CF6' },
+                          ]
+                      }
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={false}
+                      outerRadius={50}
+                      innerRadius={0}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {(
+                        stats.total > 0 && stats.completed === stats.total
+                          ? [{ name: 'Выполнено', value: 100, color: '#10B981' }]
+                          : [
+                            { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
+                            { name: 'В процессе', value: stats.in_progress || 0, color: '#8B5CF6' },
+                          ]
+                      ).map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+
+                {/* Центральный текст - только проценты */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <div className="text-xl font-bold text-gray-800">
+                    {stats.total > 0 ? Math.round(((stats.completed || 0) / stats.total) * 100) : 0}%
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-center w-32 h-32">
+                <div className="text-sm text-gray-400">Нет данных</div>
+              </div>
+            )}
 
             {/* Легенда */}
-            <div className="space-y-2">
-              {chartData.map((item, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  />
-                  <span className="text-sm">{item.value} {item.name}</span>
-                </div>
-              ))}
+            <div className="flex-1 space-y-2">
+              {loading ? (
+                <div className="text-sm text-gray-500">Загрузка...</div>
+              ) : stats ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                    <span className="text-sm text-gray-700">
+                      {stats.completed || 0} Выполнено
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                    <span className="text-sm text-gray-700">
+                      {stats.in_progress || 0} В процессе
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-gray-500">Нет данных</div>
+              )}
             </div>
-          </div>
-        </div>
-
-        {/* Расписание */}
-        <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M8 2V5M16 2V5M3.5 9.09H20.5M21 8.5V17C21 18.1046 20.1046 19 19 19H5C3.89543 19 3 18.1046 3 17V8.5C3 7.39543 3.89543 6.5 5 6.5H19C20.1046 6.5 21 7.39543 21 8.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <h2 className="text-lg font-semibold">Ваше расписание</h2>
-            </div>
-            <button className="text-gray-400 hover:text-gray-600">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13M18.5 2.5C18.8978 2.10218 19.4374 1.87868 20 1.87868C20.5626 1.87868 21.1022 2.10218 21.5 2.5C21.8978 2.89782 22.1213 3.43739 22.1213 4C22.1213 4.56261 21.8978 5.10218 21.5 5.5L12 15L8 11L18.5 2.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Календарь дней недели */}
-          <div className="flex gap-2 overflow-x-auto">
-            {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, index) => (
-              <div key={day} className="flex-shrink-0 text-center">
-                <div className="text-xs text-gray-500 mb-1">{day}</div>
-                <div className={`calendar-day ${index === 2 ? 'selected' : ''}`}>
-                  {20 + index}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Сводка */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="card text-center">
-            <div className="text-3xl font-bold text-green-500 mb-1">{completedPercentage}%</div>
-            <div className="text-sm text-gray-500">Выполнено</div>
-          </div>
-          <div className="card text-center">
-            <div className="text-3xl font-bold text-red-500 mb-1">5</div>
-            <div className="text-sm text-gray-500">Серия дней</div>
           </div>
         </div>
 
@@ -582,31 +1010,53 @@ function StatisticsPage() {
         <div>
           <h2 className="text-lg font-semibold mb-4">Привычки</h2>
           <div className="space-y-3">
-            <div className="habit-item">
-              <div className="text-2xl">🏃</div>
-              <div className="flex-1">
-                <div className="font-medium">Спорт</div>
-                <div className="text-sm text-orange-500">Нет стрика</div>
+            {habitsStats.length === 0 ? (
+              <div className="text-center text-gray-500 py-4">
+                <div className="text-4xl mb-2">📋</div>
+                <div>Нет привычек</div>
               </div>
-              <div className="streak-dots">
-                {[...Array(7)].map((_, i) => (
-                  <div key={i} className="streak-dot inactive" />
-                ))}
-              </div>
-            </div>
+            ) : (
+              habitsStats.map((habit) => {
+                const categoryInfo = TASK_CATEGORIES[habit.category] || { name: habit.category, icon: '📋' }
+                const maxStreak = habit.max_streak || 0
+                const filledCircles = Math.min(maxStreak, 7)
+                const showFire = maxStreak > 7
 
-            <div className="habit-item">
-              <div className="text-2xl">📚</div>
-              <div className="flex-1">
-                <div className="font-medium">Учёба</div>
-                <div className="text-sm text-orange-500">1 день</div>
-              </div>
-              <div className="streak-dots">
-                {[...Array(7)].map((_, i) => (
-                  <div key={i} className={`streak-dot ${i === 6 ? 'active' : 'inactive'}`} />
-                ))}
-              </div>
-            </div>
+                // Форматируем текст стрика
+                let streakText = 'Нет стрика'
+                if (maxStreak === 1) {
+                  streakText = '1 день'
+                } else if (maxStreak > 1 && maxStreak <= 4) {
+                  streakText = `${maxStreak} дня`
+                } else if (maxStreak > 4 && maxStreak <= 7) {
+                  streakText = `${maxStreak} дней`
+                } else if (maxStreak > 7) {
+                  streakText = `${maxStreak} дней`
+                }
+
+                return (
+                  <div key={habit.category} className="habit-item">
+                    <div className="text-2xl">{categoryInfo.icon}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{categoryInfo.name}</div>
+                        {showFire && (
+                          <span className="text-sm bg-orange-500 text-white px-2 py-1 rounded-full flex items-center gap-1">
+                            🔥 {maxStreak}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-orange-500">{streakText}</div>
+                    </div>
+                    <div className="streak-dots">
+                      {[...Array(7)].map((_, i) => (
+                        <div key={i} className={`streak-dot ${i < filledCircles ? 'active' : 'inactive'}`} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
       </div>
@@ -907,30 +1357,64 @@ function JournalPage() {
               {notes.length > 0 ? (
                 <div className="space-y-3">
                   {notes.map(note => (
-                    <div key={note.id} className="bg-gray-50 rounded-xl p-3">
-                      <div className="flex items-start gap-3">
-                        <span className="inline-flex">
-                          <MoodIcon value={normalizeMood(note.mood || 'neutral')} />
-                        </span>
-                        <div className="flex-1">
-                          <div className="text-sm text-gray-500 mb-1">
-                            {format(new Date(note.created_at), 'HH:mm')}
+                    editingNote && editingNote.id === note.id ? (
+                      <div key={note.id} className="bg-gray-50 rounded-xl p-3">
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-3">
+                            <select
+                              value={editMood}
+                              onChange={(e) => setEditMood(e.target.value)}
+                              className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="" disabled>Выберите настроение</option>
+                              {moodOptions.map((m) => (
+                                <option key={m.value} value={m.value}>{m.label}</option>
+                              ))}
+                            </select>
+                            <span className="inline-flex"><MoodIcon value={editMood || 'neutral'} /></span>
                           </div>
-                          <div className="text-sm">{note.content}</div>
+                          <textarea
+                            value={editContent}
+                            onChange={e => setEditContent(e.target.value)}
+                            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                            placeholder="Измените заметку..."
+                            rows={4}
+                          />
+                          <div className="flex gap-3">
+                            <button onClick={saveEdit} disabled={!editMood} className="btn flex-1 disabled:opacity-50">
+                              Сохранить
+                            </button>
+                            <button onClick={cancelEdit} className="btn-secondary flex-1">
+                              Отмена
+                            </button>
+                          </div>
                         </div>
-                        <button onClick={() => startEdit(note)} className="text-gray-400 hover:text-gray-600">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                            <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13M18.5 2.5C18.8978 2.10218 19.4374 1.87868 20 1.87868C20.5626 1.87868 21.1022 2.10218 21.5 2.5C21.8978 2.89782 22.1213 3.43739 22.1213 4C22.1213 4.56261 21.8978 5.10218 21.5 5.5L12 15L8 11L18.5 2.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        </button>
+                      </div >
+                    ) : (
+                      <div key={note.id} className="bg-gray-50 rounded-xl p-3">
+                        <div className="flex items-start gap-3">
+                          <span className="inline-flex">
+                            <MoodIcon value={normalizeMood(note.mood || 'neutral')} />
+                          </span>
+                          <div className="flex-1">
+                            <div className="text-sm text-gray-500 mb-1">
+                              {format(new Date(note.created_at), 'HH:mm')}
+                            </div>
+                            <div className="text-sm">{note.content}</div>
+                          </div>
+                          <button onClick={() => startEdit(note)} className="text-gray-400 hover:text-gray-600">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                              <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13M18.5 2.5C18.8978 2.10218 19.4374 1.87868 20 1.87868C20.5626 1.87868 21.1022 2.10218 21.5 2.5C21.8978 2.89782 22.1213 3.43739 22.1213 4C22.1213 4.56261 21.8978 5.10218 21.5 5.5L12 15L8 11L18.5 2.5Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    )
+                  ))
+                  }
+                </div >
               ) : showCreateForm ? (
-                /* Форма создания заметки */
                 <div className="space-y-4">
-                  {/* Выбор настроения */}
                   <div className="flex items-center gap-3">
                     <select
                       value={selectedMood}
@@ -946,7 +1430,6 @@ function JournalPage() {
                     </select>
                   </div>
 
-                  {/* Поле ввода заметки */}
                   <textarea
                     value={newNote}
                     onChange={e => setNewNote(e.target.value)}
@@ -955,7 +1438,6 @@ function JournalPage() {
                     rows={4}
                   />
 
-                  {/* Кнопки */}
                   <div className="flex gap-3">
                     <button
                       onClick={createNote}
@@ -979,57 +1461,58 @@ function JournalPage() {
                   </div>
                 </div>
               ) : (
-                /* Состояние "нет записей" */
                 <div className="text-center py-8">
                   <div className="text-6xl mb-4">📖</div>
                   <div className="text-lg font-medium text-gray-700 mb-2">Нет записей</div>
-                  {/* <div className="text-sm text-gray-500 mb-6">На эту дату нет записей</div> */}
                   <button
                     onClick={() => setShowCreateForm(true)}
                     className="btn"
                   >
                     Создать запись
                   </button>
-                </div>
-              )}
+                </div >
+              )
+              }
             </>
           )}
-        </div>
+        </div >
 
         {/* Редактирование заметки */}
-        {editingNote && (
-          <div className="card">
-            <h3 className="text-lg font-semibold mb-4">Редактировать заметку</h3>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <select
-                  value={editMood}
-                  onChange={(e) => setEditMood(e.target.value)}
-                  className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="" disabled>Выберите настроение</option>
-                  {moodOptions.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-                <span className="inline-flex"><MoodIcon value={editMood || 'neutral'} /></span>
-              </div>
-              <textarea
-                value={editContent}
-                onChange={e => setEditContent(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                placeholder="Измените заметку..."
-                rows={4}
-              />
-              <div className="flex gap-3">
-                <button onClick={saveEdit} disabled={!editMood} className="btn flex-1 disabled:opacity-50">Сохранить</button>
-                <button onClick={cancelEdit} className="btn-secondary flex-1">Отмена</button>
+        {
+          editingNote && (
+            <div className="card">
+              <h3 className="text-lg font-semibold mb-4">Редактировать заметку</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <select
+                    value={editMood}
+                    onChange={(e) => setEditMood(e.target.value)}
+                    className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="" disabled>Выберите настроение</option>
+                    {moodOptions.map((m) => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                  <span className="inline-flex"><MoodIcon value={editMood || 'neutral'} /></span>
+                </div>
+                <textarea
+                  value={editContent}
+                  onChange={e => setEditContent(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  placeholder="Измените заметку..."
+                  rows={4}
+                />
+                <div className="flex gap-3">
+                  <button onClick={saveEdit} disabled={!editMood} className="btn flex-1 disabled:opacity-50">Сохранить</button>
+                  <button onClick={cancelEdit} className="btn-secondary flex-1">Отмена</button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          )
+        }
+      </div >
+    </div >
   )
 }
 
@@ -1077,33 +1560,94 @@ export default function App() {
   const tg = useTelegram()
   const [route, setRoute] = useState('tasks')
   const [showCreateTask, setShowCreateTask] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
+  const [showCreateSubtask, setShowCreateSubtask] = useState(false)
+  const [parentTaskForSubtask, setParentTaskForSubtask] = useState(null)
+  const [editingSubtask, setEditingSubtask] = useState(null)
 
   useEffect(() => {
-    tg?.ready()
-    tg?.expand()
-  }, [])
+    // В DEV режиме может не быть Telegram WebApp
+    if (tg) {
+      tg.ready()
+      tg.expand()
+    } else if (import.meta.env.DEV) {
+      console.log('🔧 DEV mode: Telegram WebApp not available, running in local development mode')
+    }
+  }, [tg])
 
   const handleCreateTask = () => {
     setShowCreateTask(true)
+    setEditingTask(null)
   }
+
+  const handleEditTask = (task) => {
+    setEditingTask(task)
+    setShowCreateTask(true)
+  }
+
+  const taskUpdateCallbackRef = useRef(null)
+  const [tasksPageKey, setTasksPageKey] = useState(0) // Ключ для принудительного обновления
 
   const handleTaskCreated = () => {
     setShowCreateTask(false)
+    setEditingTask(null)
     setRoute('tasks')
+    // Принудительно обновляем страницу задач через изменение ключа
+    setTasksPageKey(prev => prev + 1)
   }
 
   const handleBack = () => {
     setShowCreateTask(false)
+    setEditingTask(null)
+  }
+
+  const handleCreateSubtask = (task) => {
+    setParentTaskForSubtask(task)
+    setEditingSubtask(null)
+    setShowCreateSubtask(true)
+  }
+
+  const handleEditSubtask = (subtask, parentTask) => {
+    setEditingSubtask(subtask)
+    setParentTaskForSubtask(parentTask)
+    setShowCreateSubtask(true)
+  }
+
+  const handleSubtaskCreated = () => {
+    setShowCreateSubtask(false)
+    setParentTaskForSubtask(null)
+    setEditingSubtask(null)
+    setRoute('tasks')
+    setTasksPageKey(prev => prev + 1)
+  }
+
+  const handleBackSubtask = () => {
+    setShowCreateSubtask(false)
+    setParentTaskForSubtask(null)
+    setEditingSubtask(null)
+  }
+
+  if (showCreateSubtask) {
+    return <CreateSubtaskPage onBack={handleBackSubtask} onSubtaskCreated={handleSubtaskCreated} parentTask={parentTaskForSubtask} subtask={editingSubtask} />
   }
 
   if (showCreateTask) {
-    return <CreateTaskPage onBack={handleBack} onTaskCreated={handleTaskCreated} />
+    return <CreateTaskPage onBack={handleBack} onTaskCreated={handleTaskCreated} task={editingTask} />
   }
 
   return (
     <div>
       {route === 'tasks' ? (
-        <TasksPage onCreateTask={handleCreateTask} />
+        <TasksPage
+          key={tasksPageKey}
+          onCreateTask={handleCreateTask}
+          onEditTask={handleEditTask}
+          onCreateSubtask={handleCreateSubtask}
+          onEditSubtask={handleEditSubtask}
+          onTaskUpdated={(callback) => {
+            taskUpdateCallbackRef.current = callback
+          }}
+        />
       ) : route === 'statistics' ? (
         <StatisticsPage />
       ) : (

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from .database import init_db, get_db
-from .schemas import TaskCreate, SubtaskCreate, NoteCreate
+from .schemas import TaskCreate, SubtaskCreate, SubtaskUpdate, NoteCreate
 from . import crud
 import logging
 from sqlalchemy.orm import Session
@@ -39,7 +39,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db()
+    try:
+        logger.info("🚀 Starting up application...")
+        init_db()
+        logger.info("✅ Application started successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to start application: {e}", exc_info=True)
+        raise
 
 
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
@@ -63,7 +69,61 @@ def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
 
 @app.get("/health")
 def health() -> JSONResponse:
-    return JSONResponse({"status": "ok"})
+    """Базовая проверка работоспособности API"""
+    return JSONResponse({
+        "status": "ok",
+        "message": "API is running"
+    })
+
+
+@app.get("/health/db")
+def health_db(db: Session = Depends(get_db)) -> JSONResponse:
+    """Проверка подключения к базе данных"""
+    try:
+        # Простой запрос для проверки подключения
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        db.commit()
+        return JSONResponse({
+            "status": "ok",
+            "database": "connected"
+        })
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}", exc_info=True)
+        return JSONResponse({
+            "status": "error",
+            "database": "disconnected",
+            "error": str(e)
+        }, status_code=500)
+
+
+@app.get("/health/full")
+def health_full() -> JSONResponse:
+    """Полная диагностика системы"""
+    import sys
+    diagnostics = {
+        "status": "ok",
+        "python_version": sys.version,
+        "dev_mode": os.getenv("DEV_MODE", "not set"),
+        "dev_user_id": os.getenv("DEV_USER_ID", "not set"),
+        "bot_token_set": "yes" if os.getenv("BOT_TOKEN") else "no",
+        "database_url": os.getenv("DATABASE_URL", "using default"),
+    }
+    
+    # Проверка импортов
+    try:
+        from telegram_webapp_auth.data import WebAppChat
+        diagnostics["telegram_webapp_auth"] = "imported"
+    except ImportError as e:
+        diagnostics["telegram_webapp_auth"] = f"import failed: {str(e)}"
+    
+    try:
+        from sqlalchemy import create_engine
+        diagnostics["sqlalchemy"] = "imported"
+    except ImportError as e:
+        diagnostics["sqlalchemy"] = f"import failed: {str(e)}"
+    
+    return JSONResponse(diagnostics)
 
 
 @app.post("/task")
@@ -135,30 +195,70 @@ def delete_task(task_id: int, db: Session = Depends(get_db), user_id: int = Depe
 
 
 @app.get("/tasks")
-def list_tasks(db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    return crud.list_tasks_with_subtasks(db, user_id=user_id)
+def list_tasks(
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_user_id),
+    date: str = None  # Опциональный параметр для выбранной даты (YYYY-MM-DD)
+):
+    selected_date = None
+    if date:
+        try:
+            from datetime import datetime
+            selected_date = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            pass  # Игнорируем неверный формат даты
+    
+    return crud.list_tasks_with_subtasks(db, user_id=user_id, selected_date=selected_date)
 
 
 @app.post("/task/{task_id}/complete")
 def complete_task(task_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    task = crud.set_task_completed(db, task_id=task_id, user_id=user_id, completed=True)
+    # Получаем задачу чтобы узнать текущее состояние
+    task = crud.get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    # Переключаем состояние (toggle)
+    new_completed_state = not task.completed
+    task = crud.set_task_completed(db, task_id=task_id, user_id=user_id, completed=new_completed_state)
     return task
 
 
 @app.post("/subtask/{subtask_id}/complete")
 def complete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    subtask = crud.set_subtask_completed(db, subtask_id=subtask_id, user_id=user_id, completed=True)
+    # Получаем текущее состояние подзадачи через временный запрос
+    from sqlalchemy import select
+    from . import models
+    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
+    if not subtask:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    # Проверяем, что подзадача принадлежит пользователю
+    parent_task = crud.get_task(db, task_id=subtask.task_id, user_id=user_id)
+    if not parent_task:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    # Переключаем состояние (toggle)
+    new_completed_state = not subtask.completed
+    subtask = crud.set_subtask_completed(db, subtask_id=subtask_id, user_id=user_id, completed=new_completed_state)
+    return subtask
+
+
+@app.put("/subtask/{subtask_id}")
+def update_subtask(subtask_id: int, payload: SubtaskUpdate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    subtask = crud.update_subtask(db, subtask_id=subtask_id, user_id=user_id, title=payload.title)
     if not subtask:
         raise HTTPException(status_code=404, detail="Subtask not found")
     return subtask
 
 
+@app.get("/habits")
+def habits_stats(db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    from . import habits_stats
+    return habits_stats.get_habits_stats(db, user_id=user_id)
+
+
 @app.get("/stats")
 def stats(period: str, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    if period not in {"7", "30", "all"}:
-        raise HTTPException(status_code=400, detail="Invalid period")
+    if period not in {"day", "week", "month", "all"}:
+        raise HTTPException(status_code=400, detail="Invalid period. Must be: day, week, month, or all")
     return crud.get_stats(db, user_id=user_id, period=period)
 
 
@@ -185,7 +285,6 @@ def delete_note(note_id: int, db: Session = Depends(get_db), user_id: int = Depe
     if not deleted:
         raise HTTPException(status_code=404, detail="Note not found")
     return {"ok": True}
-
 
 
 

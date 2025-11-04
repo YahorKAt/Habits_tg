@@ -7,10 +7,10 @@ import typing
 from datetime import datetime, timedelta, timezone
 from json import JSONDecodeError
 from urllib.parse import parse_qs, unquote
+
 from telegram_webapp_auth.data import WebAppChat, WebAppUser, WebAppInitData
 
 logger = logging.getLogger(__name__)
-
 
 class BaseTWAError(Exception):
     """Base class for all TWA-related exceptions."""
