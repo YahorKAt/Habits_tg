@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
-import { format, startOfWeek, addDays, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns'
+import { format, startOfWeek, addDays, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isPast, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
 const API_URL = import.meta.env.VITE_API_URL
@@ -461,7 +461,19 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     }
   }, [])
 
+  // Проверяем, является ли выбранная дата прошлой
+  const isPastDate = useMemo(() => {
+    const today = startOfDay(new Date())
+    const selected = startOfDay(selectedDate)
+    return selected < today
+  }, [selectedDate])
+
   const toggleTask = async (task) => {
+    // Блокируем изменение статуса для прошлых дат
+    if (isPastDate) {
+      return
+    }
+
     try {
       const updated = await api(`/task/${task.id}/complete`, { method: 'POST' })
 
@@ -506,6 +518,11 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   }
 
   const deleteTask = async (task) => {
+    // Блокируем удаление задач для прошлых дат
+    if (isPastDate) {
+      return
+    }
+
     try {
       await api(`/task/${task.id}`, { method: 'DELETE' })
       setTasks(prev => prev.filter(t => t.id !== task.id))
@@ -527,6 +544,11 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   }
 
   const toggleSubtask = async (subtask, parentTask) => {
+    // Блокируем изменение статуса для прошлых дат
+    if (isPastDate) {
+      return
+    }
+
     try {
       const updated = await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
 
@@ -583,6 +605,11 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   }
 
   const deleteSubtask = async (subtaskId, parentTaskId) => {
+    // Блокируем удаление подзадач для прошлых дат
+    if (isPastDate) {
+      return
+    }
+
     try {
       await api(`/subtask/${subtaskId}`, { method: 'DELETE' })
       setTasks(prev => prev.map(t => {
@@ -681,18 +708,26 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  toggleTask(task)
+                  if (!isPastDate) {
+                    toggleTask(task)
+                  }
                 }}
-                className={`mt-1 w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors ${task.completed ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-orange-400 text-transparent'}`}
+                disabled={isPastDate}
+                className={`mt-1 w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors ${task.completed ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-orange-400 text-transparent'} ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                 aria-pressed={task.completed}
+                title={isPastDate ? 'Нельзя изменить статус для прошлых дат' : ''}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                   <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               <div
-                className="flex-1 min-w-0 cursor-pointer"
-                onClick={() => onEditTask(task)}
+                className={`flex-1 min-w-0 ${isPastDate ? 'cursor-default' : 'cursor-pointer'}`}
+                onClick={() => {
+                  if (!isPastDate) {
+                    onEditTask(task)
+                  }
+                }}
               >
 
                 <div className="flex flex-wrap items-center gap-2 gap-y-2 mb-2">
@@ -744,12 +779,13 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (onCreateSubtask) {
+                    if (!isPastDate && onCreateSubtask) {
                       onCreateSubtask(task)
                     }
                   }}
-                  className="text-gray-400 hover:text-gray-600"
-                  title="Добавить подзадачу"
+                  disabled={isPastDate}
+                  className={`text-gray-400 ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'hover:text-gray-600 cursor-pointer'}`}
+                  title={isPastDate ? 'Нельзя добавить подзадачу для прошлых дат' : 'Добавить подзадачу'}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -758,9 +794,13 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
-                    deleteTask(task)
+                    if (!isPastDate) {
+                      deleteTask(task)
+                    }
                   }}
-                  className="text-red-400 hover:text-red-600"
+                  disabled={isPastDate}
+                  className={`text-red-400 ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-600 cursor-pointer'}`}
+                  title={isPastDate ? 'Нельзя удалить задачу для прошлых дат' : 'Удалить задачу'}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -778,13 +818,17 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          toggleSubtask(subtask, task)
+                          if (!isPastDate) {
+                            toggleSubtask(subtask, task)
+                          }
                         }}
+                        disabled={isPastDate}
                         className={`w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors flex-shrink-0 ${subtask.completed
                           ? 'bg-orange-500 border-orange-500 text-white'
                           : 'bg-white border-orange-400 text-transparent'
-                          }`}
+                          } ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                         aria-pressed={subtask.completed}
+                        title={isPastDate ? 'Нельзя изменить статус для прошлых дат' : ''}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                           <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -792,10 +836,10 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                       </button>
 
                       <div
-                        className="flex-1 min-w-0 cursor-pointer"
+                        className={`flex-1 min-w-0 ${isPastDate ? 'cursor-default' : 'cursor-pointer'}`}
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (onEditSubtask) {
+                          if (!isPastDate && onEditSubtask) {
                             onEditSubtask(subtask, task)
                           }
                         }}
@@ -808,12 +852,13 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (confirm('Удалить подзадачу?')) {
+                          if (!isPastDate && confirm('Удалить подзадачу?')) {
                             deleteSubtask(subtask.id, task.id)
                           }
                         }}
-                        className="text-red-400 hover:text-red-600 flex-shrink-0"
-                        title="Удалить подзадачу"
+                        disabled={isPastDate}
+                        className={`text-red-400 flex-shrink-0 ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-600 cursor-pointer'}`}
+                        title={isPastDate ? 'Нельзя удалить подзадачу для прошлых дат' : 'Удалить подзадачу'}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                           <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
