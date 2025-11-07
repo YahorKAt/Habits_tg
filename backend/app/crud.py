@@ -138,6 +138,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     # Обновляем задачи (подзадачи уже загружены)
     for task in tasks:
         # Пропускаем удаленные задачи при автоматическом переносе
+        # Удаленные задачи не переносятся на следующий день
         if task.deleted:
             continue
         
@@ -151,6 +152,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         frequency = task.frequency
         
         # Ежедневные задачи - всегда переносятся на новый день (даже если выполнены)
+        # После 00:00 задача автоматически переносится на следующий день со статусом "невыполнена"
         if frequency == 'daily':
             # Проверяем, был ли уже новый день после последнего выполнения
             if task.last_completed_date:
@@ -166,10 +168,20 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                     if new_streak != task.streak:
                         task.streak = new_streak
                     has_changes = True
-            elif not task.last_completed_date and task.completed:
-                # Если задача выполнена, но нет last_completed_date - это странно, но сбрасываем
-                task.completed = False
-                has_changes = True
+            elif not task.last_completed_date:
+                # Если задача не имеет last_completed_date, проверяем день создания
+                task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
+                if task_created_day:
+                    if task_created_day.tzinfo is None:
+                        task_created_day = task_created_day.replace(tzinfo=timezone.utc)
+                    # Если задача была создана до сегодня, она должна быть невыполненной
+                    if task_created_day < today:
+                        task.completed = False
+                        has_changes = True
+                elif task.completed:
+                    # Если задача выполнена, но нет last_completed_date и created_at - сбрасываем
+                    task.completed = False
+                    has_changes = True
         
         # Еженедельные задачи - переносятся на новый день только если НЕ выполнены
         elif frequency == 'weekly':
@@ -217,8 +229,12 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             continue
         
         # Удаленные задачи показываем только для прошлых дат
-        if task.deleted and not is_past_date:
-            continue
+        # Если задача была удалена сегодня, она не должна переноситься на следующий день
+        if task.deleted:
+            # Показываем удаленные задачи только для прошлых дат (архив)
+            if not is_past_date:
+                continue
+            # Для прошлых дат показываем удаленные задачи, но не обновляем их статус
         
         frequency = task.frequency
         
@@ -234,7 +250,10 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                     completed_day = completed_day.replace(tzinfo=timezone.utc)
                 # Задача выполнена только если last_completed_date совпадает с выбранным днем
                 task_completed_for_date = (completed_day == selected_day)
-            # Если это не прошлая дата (сегодня или будущее), используем текущий статус (после обновления выше)
+            # Если это будущая дата - задача всегда невыполнена
+            elif selected_day > today:
+                task_completed_for_date = False
+            # Если это сегодня или прошлая дата, используем текущий статус (после обновления выше)
             elif not is_past_date:
                 task_completed_for_date = task.completed
             # Для прошлых дат без last_completed_date - задача не выполнена
