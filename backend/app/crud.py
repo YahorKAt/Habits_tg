@@ -13,11 +13,22 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
     if description is not None and description.strip() == '':
         description = None
     
+    # Синхронизируем repeat_type с frequency, если repeat_type не указан явно
+    if repeat_type is None:
+        if frequency == 'daily':
+            repeat_type = models.RepeatType.DAILY
+        elif frequency == 'weekly':
+            repeat_type = models.RepeatType.WEEKLY
+        elif frequency == 'monthly':
+            repeat_type = models.RepeatType.MONTHLY
+        else:
+            repeat_type = models.RepeatType.NONE
+    
     task = models.Task(
         user_id=user_id, 
         title=title,
         description=description,
-        repeat_type=repeat_type or models.RepeatType.NONE,
+        repeat_type=repeat_type,
         repeat_interval=repeat_interval,
         next_due_date=next_due_date,
         end_date=end_date,
@@ -41,9 +52,20 @@ def update_task(db: Session, task_id: int, user_id: int, title: str, description
     if not task:
         return None
     
+    # Синхронизируем repeat_type с frequency, если repeat_type не указан явно
+    if repeat_type is None:
+        if frequency == 'daily':
+            repeat_type = models.RepeatType.DAILY
+        elif frequency == 'weekly':
+            repeat_type = models.RepeatType.WEEKLY
+        elif frequency == 'monthly':
+            repeat_type = models.RepeatType.MONTHLY
+        else:
+            repeat_type = models.RepeatType.NONE
+    
     task.title = title
     task.description = description
-    task.repeat_type = repeat_type or models.RepeatType.NONE
+    task.repeat_type = repeat_type
     task.repeat_interval = repeat_interval
     task.next_due_date = next_due_date
     task.end_date = end_date
