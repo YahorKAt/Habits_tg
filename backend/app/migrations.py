@@ -118,6 +118,34 @@ def migrate_all(db: Session):
         else:
             logger.info("⏭️  Поле 'repeat_type' уже удалено, пропускаем")
         
+        # Миграция 4: Добавление поля parent_task_id для связи с оригинальной задачей
+        if not column_exists('tasks', 'parent_task_id', db):
+            logger.info("🔄 Миграция 4: Добавление поля 'parent_task_id' в таблицу tasks...")
+            try:
+                if db.bind.dialect.name == 'sqlite':
+                    db.execute(text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER"))
+                    # SQLite не поддерживает внешние ключи через ALTER TABLE, но можно добавить индекс
+                    try:
+                        db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_parent_task_id ON tasks(parent_task_id)"))
+                    except:
+                        pass
+                else:  # PostgreSQL
+                    db.execute(text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER"))
+                    db.execute(text("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_parent_task_id FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE"))
+                    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_parent_task_id ON tasks(parent_task_id)"))
+                db.commit()
+                logger.info("✅ Поле 'parent_task_id' добавлено")
+            except Exception as e:
+                logger.warning(f"⚠️  Не удалось добавить поле 'parent_task_id' (возможно, уже существует): {e}")
+                db.rollback()
+                # Проверяем еще раз после ошибки
+                if column_exists('tasks', 'parent_task_id', db):
+                    logger.info("✅ Поле 'parent_task_id' существует, продолжаем")
+                else:
+                    raise
+        else:
+            logger.info("⏭️  Поле 'parent_task_id' уже существует, пропускаем")
+        
         logger.info("✅ Все миграции проверены и применены успешно")
         
     except Exception as e:

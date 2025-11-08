@@ -6,6 +6,9 @@ from . import models
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_task(db: Session, user_id: int, title: str, description=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
@@ -13,6 +16,7 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
     if description is not None and description.strip() == '':
         description = None
     
+    # Создаем оригинальную задачу (parent_task_id = None)
     task = models.Task(
         user_id=user_id, 
         title=title,
@@ -21,11 +25,17 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
         next_due_date=next_due_date,
         end_date=end_date,
         category=category,
-        frequency=frequency
+        frequency=frequency,
+        parent_task_id=None  # Оригинальная задача не имеет родителя
     )
     db.add(task)
     db.commit()
     db.refresh(task)
+    
+    # Сразу создаем задачу для сегодняшнего дня/недели/месяца
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    generate_daily_tasks(db, today)
+    
     return task
 
 
@@ -90,8 +100,8 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
 
 def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime = None):
     """
-    Получает список задач с подзадачами и автоматически обновляет их состояние.
-    Оптимизировано для быстрой загрузки.
+    Получает список задач с подзадачами для выбранной даты.
+    Работает с реальными записями в БД (каждая дата имеет свою запись).
     
     Args:
         selected_date: Дата для фильтрации задач (если None - используется текущая дата)
@@ -103,22 +113,20 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     # Подготавливаем нормализованные даты один раз (timezone-aware)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     selected_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0) if selected_date.tzinfo else selected_date.replace(tzinfo=timezone.utc, hour=0, minute=0, second=0, microsecond=0)
-    current_week_start = now - timedelta(days=now.weekday())
-    current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-    current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     
     # Убеждаемся, что все даты timezone-aware
     if selected_day.tzinfo is None:
         selected_day = selected_day.replace(tzinfo=timezone.utc)
     if today.tzinfo is None:
         today = today.replace(tzinfo=timezone.utc)
-    if current_week_start.tzinfo is None:
-        current_week_start = current_week_start.replace(tzinfo=timezone.utc)
-    if current_month_start.tzinfo is None:
-        current_month_start = current_month_start.replace(tzinfo=timezone.utc)
     
-    # Получаем все задачи одним запросом с eager loading подзадач
-    # Для текущей даты исключаем удаленные задачи, для прошлых дат включаем их
+    # Для будущих дат или сегодня - генерируем задачи если их еще нет
+    if selected_day >= today:
+        generate_daily_tasks(db, selected_day)
+    
+    # Получаем задачи для выбранной даты
+    # Фильтруем по created_at = selected_day (для ежедневных задач)
+    # Или по неделе/месяцу для еженедельных/месячных задач
     is_past_date = selected_day < today
     stmt = select(models.Task).where(models.Task.user_id == user_id)
     
@@ -131,90 +139,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     result = db.execute(stmt)
     tasks = result.unique().scalars().all()
     
-    has_changes = False
-    
-    # Обновляем задачи (подзадачи уже загружены)
-    for task in tasks:
-        # Пропускаем удаленные задачи при автоматическом переносе
-        # Удаленные задачи не переносятся на следующий день
-        if task.deleted:
-            continue
-        
-        # Обновляем стрик один раз для каждой задачи
-        if task.last_completed_date:
-            new_streak = reset_streak_if_missed(task, now)
-            if new_streak != task.streak:
-                task.streak = new_streak
-                has_changes = True
-        
-        frequency = task.frequency
-        
-        # Ежедневные задачи - всегда переносятся на новый день (даже если выполнены)
-        # После 00:00 задача автоматически переносится на следующий день со статусом "невыполнена"
-        if frequency == 'daily':
-            # Проверяем, был ли уже новый день после последнего выполнения
-            if task.last_completed_date:
-                last_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                # Убеждаемся, что last_day timezone-aware для сравнения
-                if last_day.tzinfo is None:
-                    last_day = last_day.replace(tzinfo=timezone.utc)
-                if last_day < today:
-                    # Ежедневные задачи всегда сбрасываются на новый день
-                    task.completed = False
-                    # Обновляем стрик если был пропуск
-                    new_streak = reset_streak_if_missed(task, now)
-                    if new_streak != task.streak:
-                        task.streak = new_streak
-                    has_changes = True
-            elif not task.last_completed_date:
-                # Если задача не имеет last_completed_date, проверяем день создания
-                task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
-                if task_created_day:
-                    if task_created_day.tzinfo is None:
-                        task_created_day = task_created_day.replace(tzinfo=timezone.utc)
-                    # Если задача была создана до сегодня, она должна быть невыполненной
-                    if task_created_day < today:
-                        task.completed = False
-                        has_changes = True
-                elif task.completed:
-                    # Если задача выполнена, но нет last_completed_date и created_at - сбрасываем
-                    task.completed = False
-                    has_changes = True
-        
-        # Еженедельные задачи - переносятся на новый день только если НЕ выполнены
-        elif frequency == 'weekly':
-            # Если задача не выполнена, она видна каждый день текущей недели
-            # Выполненные задачи остаются выполненными до начала новой недели
-            if task.completed and task.last_completed_date:
-                # Выполненные еженедельные задачи переносятся только при начале новой недели
-                last_week_start = task.last_completed_date - timedelta(days=task.last_completed_date.weekday())
-                last_week_start = last_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-                # Убеждаемся, что last_week_start timezone-aware
-                if last_week_start.tzinfo is None:
-                    last_week_start = last_week_start.replace(tzinfo=timezone.utc)
-                if last_week_start < current_week_start:
-                    task.completed = False
-                    has_changes = True
-        
-        # Месячные задачи - переносятся на новый день только если НЕ выполнены
-        elif frequency == 'monthly':
-            # Если задача не выполнена, она видна каждый день текущего месяца
-            # Выполненные задачи остаются выполненными до начала нового месяца
-            if task.completed and task.last_completed_date:
-                # Выполненные месячные задачи переносятся только при начале нового месяца
-                last_month_start = task.last_completed_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                # Убеждаемся, что last_month_start timezone-aware
-                if last_month_start.tzinfo is None:
-                    last_month_start = last_month_start.replace(tzinfo=timezone.utc)
-                if last_month_start < current_month_start:
-                    task.completed = False
-                    has_changes = True
-    
-    # Коммитим изменения только если были изменения
-    if has_changes:
-        db.commit()
-    
-    # Фильтруем задачи по выбранной дате и устанавливаем корректный статус выполнения для выбранной даты
+    # Фильтруем задачи по выбранной дате
     filtered_tasks = []
     for task in tasks:
         task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
@@ -222,155 +147,45 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         if task_created_day and task_created_day.tzinfo is None:
             task_created_day = task_created_day.replace(tzinfo=timezone.utc)
         
-        # Задача не может быть показана для дней до её создания
-        if task_created_day and selected_day < task_created_day:
-            continue
-        
         # Удаленные задачи показываем только для прошлых дат
-        # Если задача была удалена сегодня, она не должна переноситься на следующий день
         if task.deleted:
-            # Показываем удаленные задачи только для прошлых дат (архив)
             if not is_past_date:
                 continue
-            # Для прошлых дат показываем удаленные задачи, но не обновляем их статус
         
         frequency = task.frequency
         
-        # Определяем статус выполнения для выбранной даты
-        task_completed_for_date = False
+        # Фильтруем задачи по дате создания
+        should_show = False
         
         if frequency == 'daily':
-            # Ежедневные задачи - проверяем, была ли задача выполнена в выбранный день
-            if task.last_completed_date:
-                completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                # Убеждаемся, что completed_day timezone-aware для сравнения
-                if completed_day.tzinfo is None:
-                    completed_day = completed_day.replace(tzinfo=timezone.utc)
-                # Задача выполнена только если last_completed_date совпадает с выбранным днем
-                task_completed_for_date = (completed_day == selected_day)
-            # Если это будущая дата - задача всегда невыполнена
-            elif selected_day > today:
-                task_completed_for_date = False
-            # Если это сегодня или прошлая дата, используем текущий статус (после обновления выше)
-            elif not is_past_date:
-                task_completed_for_date = task.completed
-            # Для прошлых дат без last_completed_date - задача не выполнена
-            else:
-                task_completed_for_date = False
+            # Ежедневные задачи - показываем только те, у которых created_at = selected_day
+            if task_created_day and task_created_day == selected_day:
+                should_show = True
         
         elif frequency == 'weekly':
-            # Еженедельные задачи - проверяем, была ли задача выполнена в выбранную неделю
-            if task.last_completed_date:
-                completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                # Убеждаемся, что completed_day timezone-aware
-                if completed_day.tzinfo is None:
-                    completed_day = completed_day.replace(tzinfo=timezone.utc)
-                completed_week_start = completed_day - timedelta(days=completed_day.weekday())
-                selected_week_start = selected_day - timedelta(days=selected_day.weekday())
-                # Задача выполнена только если выбранный день в той же неделе, что и выполнение
-                task_completed_for_date = (selected_week_start == completed_week_start)
-            # Если это будущая дата - задача всегда невыполнена
-            elif selected_day > today:
-                task_completed_for_date = False
-            elif not is_past_date:
-                task_completed_for_date = task.completed
-        
-        elif frequency == 'monthly':
-            # Месячные задачи - проверяем, была ли задача выполнена в выбранный месяц
-            if task.last_completed_date:
-                completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                # Убеждаемся, что completed_day timezone-aware
-                if completed_day.tzinfo is None:
-                    completed_day = completed_day.replace(tzinfo=timezone.utc)
-                completed_month_start = completed_day.replace(day=1)
-                selected_month_start = selected_day.replace(day=1)
-                # Задача выполнена только если выбранный день в том же месяце, что и выполнение
-                task_completed_for_date = (selected_month_start == completed_month_start)
-            # Если это будущая дата - задача всегда невыполнена
-            elif selected_day > today:
-                task_completed_for_date = False
-            elif not is_past_date:
-                task_completed_for_date = task.completed
-        
-        # Обновляем статус задачи для выбранной даты
-        task.completed = task_completed_for_date
-        
-        # Для прошлых дат: если задача не выполнена для выбранной даты, все подзадачи тоже должны быть не выполнены
-        # (так как мы не знаем историю выполнения подзадач по датам)
-        if is_past_date and not task_completed_for_date:
-            for subtask in task.subtasks:
-                subtask.completed = False
-        
-        # Ежедневные задачи - показываем для всех дней после создания
-        if frequency == 'daily':
-            if not task_created_day or selected_day >= task_created_day:
-                filtered_tasks.append(task)
-        
-        # Еженедельные задачи - показываем для будущих недель, если задача не выполнена
-        elif frequency == 'weekly':
+            # Еженедельные задачи - показываем задачи, созданные в выбранную неделю
             if task_created_day:
-                # Определяем неделю выбранной даты
                 selected_week_start = selected_day - timedelta(days=selected_day.weekday())
-                
-                # Определяем неделю создания задачи
                 task_week_start = task_created_day - timedelta(days=task_created_day.weekday())
-                
-                # Если задача выполнена, проверяем неделю выполнения
-                if task.last_completed_date:
-                    completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                    # Убеждаемся, что completed_day timezone-aware
-                    if completed_day.tzinfo is None:
-                        completed_day = completed_day.replace(tzinfo=timezone.utc)
-                    completed_week_start = completed_day - timedelta(days=completed_day.weekday())
-                    
-                    # Показываем только если выбранный день в неделе выполнения
-                    if selected_week_start == completed_week_start:
-                        filtered_tasks.append(task)
-                else:
-                    # Невыполненная задача - показываем для всех недель начиная с недели создания
-                    # Для будущих дат показываем задачи для будущих недель
-                    if selected_week_start >= task_week_start:
-                        # Для прошлых дат - только если неделя не позже текущей
-                        # Для будущих дат - показываем все будущие недели
-                        if is_past_date:
-                            if selected_week_start <= current_week_start:
-                                filtered_tasks.append(task)
-                        else:
-                            # Будущая или текущая дата - показываем задачу
-                            filtered_tasks.append(task)
+                if selected_week_start == task_week_start:
+                    should_show = True
         
-        # Месячные задачи - показываем для будущих месяцев, если задача не выполнена
         elif frequency == 'monthly':
+            # Месячные задачи - показываем задачи, созданные в выбранный месяц
             if task_created_day:
-                # Определяем месяц выбранной даты
                 selected_month_start = selected_day.replace(day=1)
-                
-                # Определяем месяц создания задачи
                 task_month_start = task_created_day.replace(day=1)
-                
-                # Если задача выполнена, проверяем месяц выполнения
-                if task.last_completed_date:
-                    completed_day = task.last_completed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-                    # Убеждаемся, что completed_day timezone-aware
-                    if completed_day.tzinfo is None:
-                        completed_day = completed_day.replace(tzinfo=timezone.utc)
-                    completed_month_start = completed_day.replace(day=1)
-                    
-                    # Показываем только если выбранный день в месяце выполнения
-                    if selected_month_start == completed_month_start:
-                        filtered_tasks.append(task)
-                else:
-                    # Невыполненная задача - показываем для всех месяцев начиная с месяца создания
-                    # Для будущих дат показываем задачи для будущих месяцев
-                    if selected_month_start >= task_month_start:
-                        # Для прошлых дат - только если месяц не позже текущего
-                        # Для будущих дат - показываем все будущие месяцы
-                        if is_past_date:
-                            if selected_month_start <= current_month_start:
-                                filtered_tasks.append(task)
-                        else:
-                            # Будущая или текущая дата - показываем задачу
-                            filtered_tasks.append(task)
+                if selected_month_start == task_month_start:
+                    should_show = True
+        
+        if should_show:
+            # Статус выполнения уже установлен в поле completed при создании задачи
+            # Для прошлых дат: если задача не выполнена, все подзадачи тоже должны быть не выполнены
+            if is_past_date and not task.completed:
+                for subtask in task.subtasks:
+                    subtask.completed = False
+            
+            filtered_tasks.append(task)
     
     return filtered_tasks
 
@@ -745,6 +560,144 @@ def delete_note(db: Session, note_id: int, user_id: int) -> bool:
     db.delete(note)
     db.commit()
     return True
+
+
+def generate_daily_tasks(db: Session, target_date: datetime = None):
+    """
+    Генерирует задачи для нового дня/недели/месяца.
+    Вызывается автоматически при наступлении 00:00.
+    
+    Args:
+        target_date: Дата, для которой нужно создать задачи (по умолчанию - сегодня)
+    """
+    if target_date is None:
+        target_date = datetime.now(timezone.utc)
+    
+    target_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    target_week_start = target_date - timedelta(days=target_date.weekday())
+    target_month_start = target_date.replace(day=1)
+    
+    # Получаем все оригинальные задачи (без parent_task_id) для всех пользователей
+    original_tasks = db.execute(
+        select(models.Task)
+        .where(
+            models.Task.parent_task_id == None,
+            models.Task.deleted == False
+        )
+    ).scalars().all()
+    
+    created_count = 0
+    
+    for original_task in original_tasks:
+        # Проверяем, не истекла ли задача
+        if original_task.end_date and target_date > original_task.end_date.replace(tzinfo=timezone.utc):
+            continue
+        
+        # Проверяем, была ли уже создана задача для этой даты/недели/месяца
+        existing_task = None
+        if original_task.frequency == 'daily':
+            # Для ежедневных задач проверяем по конкретной дате
+            existing_task = db.execute(
+                select(models.Task)
+                .where(
+                    models.Task.parent_task_id == original_task.id,
+                    models.Task.user_id == original_task.user_id,
+                    func.date(models.Task.created_at) == func.date(target_date)
+                )
+            ).scalar_one_or_none()
+        elif original_task.frequency == 'weekly':
+            # Для еженедельных задач проверяем по неделе
+            existing_task = db.execute(
+                select(models.Task)
+                .where(
+                    models.Task.parent_task_id == original_task.id,
+                    models.Task.user_id == original_task.user_id,
+                    func.date(models.Task.created_at) >= func.date(target_week_start),
+                    func.date(models.Task.created_at) < func.date(target_week_start + timedelta(days=7))
+                )
+            ).scalar_one_or_none()
+        elif original_task.frequency == 'monthly':
+            # Для месячных задач проверяем по месяцу
+            next_month_start = (target_month_start + relativedelta(months=1)).replace(day=1)
+            existing_task = db.execute(
+                select(models.Task)
+                .where(
+                    models.Task.parent_task_id == original_task.id,
+                    models.Task.user_id == original_task.user_id,
+                    func.date(models.Task.created_at) >= func.date(target_month_start),
+                    func.date(models.Task.created_at) < func.date(next_month_start)
+                )
+            ).scalar_one_or_none()
+        
+        if existing_task:
+            continue  # Задача уже создана для этого периода
+        
+        # Определяем, нужно ли создавать задачу для этой даты
+        should_create = False
+        
+        if original_task.frequency == 'daily':
+            # Ежедневные задачи - создаем для каждого дня начиная с created_at
+            task_created_day = original_task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if original_task.created_at else None
+            if task_created_day and target_date >= task_created_day:
+                # Проверяем, не была ли задача удалена до этой даты
+                if original_task.deleted_at:
+                    deleted_day = original_task.deleted_at.replace(hour=0, minute=0, second=0, microsecond=0)
+                    if target_date >= deleted_day:
+                        continue  # Не создаем задачи после удаления
+                should_create = True
+        
+        elif original_task.frequency == 'weekly':
+            # Еженедельные задачи - создаем в начале каждой недели
+            task_created_day = original_task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if original_task.created_at else None
+            if task_created_day:
+                task_week_start = task_created_day - timedelta(days=task_created_day.weekday())
+                if target_week_start >= task_week_start and target_date.weekday() == 0:  # Только в понедельник
+                    should_create = True
+        
+        elif original_task.frequency == 'monthly':
+            # Месячные задачи - создаем в начале каждого месяца
+            task_created_day = original_task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if original_task.created_at else None
+            if task_created_day:
+                task_month_start = task_created_day.replace(day=1)
+                if target_month_start >= task_month_start and target_date.day == 1:  # Только 1-го числа
+                    should_create = True
+        
+        if should_create:
+            # Создаем новую задачу для этой даты
+            new_task = models.Task(
+                user_id=original_task.user_id,
+                title=original_task.title,
+                description=original_task.description,
+                repeat_interval=original_task.repeat_interval,
+                next_due_date=None,
+                end_date=original_task.end_date,
+                category=original_task.category,
+                frequency=original_task.frequency,
+                parent_task_id=original_task.id,
+                completed=False,
+                streak=0,
+                deleted=False
+            )
+            # Устанавливаем created_at в target_date
+            new_task.created_at = target_date
+            db.add(new_task)
+            created_count += 1
+            
+            # Копируем подзадачи из оригинальной задачи
+            for subtask in original_task.subtasks:
+                new_subtask = models.Subtask(
+                    task_id=new_task.id,
+                    title=subtask.title,
+                    completed=False
+                )
+                new_subtask.created_at = target_date
+                db.add(new_subtask)
+    
+    if created_count > 0:
+        db.commit()
+        logger.info(f"✅ Created {created_count} tasks for {target_date.date()}")
+    
+    return created_count
 
 
 

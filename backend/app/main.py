@@ -10,6 +10,9 @@ from . import crud
 import logging
 from sqlalchemy.orm import Session
 import os
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from datetime import datetime, timezone
 
 
 from .telegram_auth import parse_and_validate_init_data
@@ -17,6 +20,9 @@ from .telegram_auth import parse_and_validate_init_data
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Создаем планировщик задач
+scheduler = BackgroundScheduler()
 
 
 app = FastAPI(title="Habits Mini App API")
@@ -38,15 +44,47 @@ app.add_middleware(
 
 
 
+def generate_tasks_job():
+    """Задача для генерации задач в 00:00 каждый день"""
+    try:
+        db = next(get_db())
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        count = crud.generate_daily_tasks(db, today)
+        logger.info(f"🔄 Scheduled task: Generated {count} tasks for {today.date()}")
+    except Exception as e:
+        logger.error(f"❌ Error in scheduled task generation: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     try:
         logger.info("🚀 Starting up application...")
         init_db()
+        
+        # Настраиваем планировщик для генерации задач в 00:00 UTC каждый день
+        scheduler.add_job(
+            generate_tasks_job,
+            trigger=CronTrigger(hour=0, minute=0, timezone='UTC'),
+            id='generate_daily_tasks',
+            name='Generate daily tasks at midnight',
+            replace_existing=True
+        )
+        scheduler.start()
+        logger.info("✅ Scheduler started - tasks will be generated at 00:00 UTC daily")
         logger.info("✅ Application started successfully")
     except Exception as e:
         logger.error(f"❌ Failed to start application: {e}", exc_info=True)
         raise
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    """Останавливаем планировщик при выключении приложения"""
+    if scheduler.running:
+        scheduler.shutdown()
+        logger.info("✅ Scheduler stopped")
 
 
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
