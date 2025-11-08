@@ -176,9 +176,14 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         # Фильтруем задачи по дате создания
         should_show = False
         
+        # Проверяем, является ли это оригинальной задачей (parent_task_id = NULL)
+        is_original_task = task.parent_task_id is None
+        
         if frequency == 'daily':
-            # Ежедневные задачи - показываем только те, у которых created_at = selected_day
+            # Ежедневные задачи
             if task_created_day and task_created_day == selected_day:
+                # Показываем оригинальную задачу для дня её создания
+                # Или дочернюю задачу для соответствующего дня
                 should_show = True
         
         elif frequency == 'weekly':
@@ -187,6 +192,8 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 selected_week_start = selected_day - timedelta(days=selected_day.weekday())
                 task_week_start = task_created_day - timedelta(days=task_created_day.weekday())
                 if selected_week_start == task_week_start:
+                    # Показываем оригинальную задачу для недели её создания
+                    # Или дочернюю задачу для соответствующей недели
                     should_show = True
         
         elif frequency == 'monthly':
@@ -195,6 +202,8 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 selected_month_start = selected_day.replace(day=1)
                 task_month_start = task_created_day.replace(day=1)
                 if selected_month_start == task_month_start:
+                    # Показываем оригинальную задачу для месяца её создания
+                    # Или дочернюю задачу для соответствующего месяца
                     should_show = True
         
         if should_show:
@@ -665,9 +674,9 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
         should_create = False
         
         if original_task.frequency == 'daily':
-            # Ежедневные задачи - создаем для каждого дня начиная с created_at
+            # Ежедневные задачи - создаем для каждого дня ПОСЛЕ created_at (не в тот же день)
             task_created_day = original_task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if original_task.created_at else None
-            if task_created_day and target_date >= task_created_day:
+            if task_created_day and target_date > task_created_day:  # Строго больше, не равно
                 # Проверяем, не была ли задача удалена до этой даты
                 if original_task.deleted_at:
                     deleted_day = original_task.deleted_at.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -676,19 +685,21 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
                 should_create = True
         
         elif original_task.frequency == 'weekly':
-            # Еженедельные задачи - создаем в начале каждой недели
+            # Еженедельные задачи - создаем в начале каждой недели ПОСЛЕ недели создания
             task_created_day = original_task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if original_task.created_at else None
             if task_created_day:
                 task_week_start = task_created_day - timedelta(days=task_created_day.weekday())
-                if target_week_start >= task_week_start and target_date.weekday() == 0:  # Только в понедельник
+                # Создаем только если это не та же неделя, что и создание, и это понедельник
+                if target_week_start > task_week_start and target_date.weekday() == 0:  # Строго больше
                     should_create = True
         
         elif original_task.frequency == 'monthly':
-            # Месячные задачи - создаем в начале каждого месяца
+            # Месячные задачи - создаем в начале каждого месяца ПОСЛЕ месяца создания
             task_created_day = original_task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if original_task.created_at else None
             if task_created_day:
                 task_month_start = task_created_day.replace(day=1)
-                if target_month_start >= task_month_start and target_date.day == 1:  # Только 1-го числа
+                # Создаем только если это не тот же месяц, что и создание, и это 1-го числа
+                if target_month_start > task_month_start and target_date.day == 1:  # Строго больше
                     should_create = True
         
         if should_create:
