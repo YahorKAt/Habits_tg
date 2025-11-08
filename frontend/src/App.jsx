@@ -447,19 +447,45 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const daysAround = useMemo(() => {
     const days = []
     const today = new Date()
-    for (let i = 29; i >= 0; i--) {
+    // Показываем 30 дней назад и 7 дней вперед
+    for (let i = 30; i >= 0; i--) {
       const d = new Date(today)
       d.setDate(today.getDate() - i)
+      days.push(d)
+    }
+    // Добавляем 7 дней вперед
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() + i)
       days.push(d)
     }
     return days
   }, [])
 
+  // Центрируем текущий день при загрузке
   useEffect(() => {
-    if (ribbonRef.current) {
-      ribbonRef.current.scrollLeft = ribbonRef.current.scrollWidth
+    if (ribbonRef.current && daysAround.length > 0) {
+      // Небольшая задержка для того, чтобы DOM успел отрендериться
+      const timeoutId = setTimeout(() => {
+        const today = new Date()
+        const todayIndex = daysAround.findIndex(d => isSameDay(d, today))
+
+        if (todayIndex !== -1 && ribbonRef.current) {
+          // Используем scrollIntoView для центрирования
+          const todayButton = ribbonRef.current.children[todayIndex]
+          if (todayButton) {
+            todayButton.scrollIntoView({
+              behavior: 'auto',
+              block: 'nearest',
+              inline: 'center'
+            })
+          }
+        }
+      }, 100)
+
+      return () => clearTimeout(timeoutId)
     }
-  }, [])
+  }, [daysAround])
 
   // Проверяем, является ли выбранная дата прошлой
   const isPastDate = useMemo(() => {
@@ -681,15 +707,16 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
             </div>
           </div>
-          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1">
+          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1 scroll-smooth">
             {daysAround.map((d) => {
               const isSel = isSameDay(d, selectedDate)
               const isTod = isSameDay(d, new Date())
+              const isFuture = d > new Date() && !isSameDay(d, new Date())
               return (
                 <button
                   key={d.toISOString()}
                   onClick={() => setSelectedDate(new Date(d))}
-                  className={`flex-none w-16 h-14 inline-flex flex-col items-center justify-center rounded-xl border select-none ${isSel ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200'} ${isTod ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : ''}`}
+                  className={`flex-none w-16 h-14 inline-flex flex-col items-center justify-center rounded-xl border select-none ${isSel ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200'} ${isTod ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : ''} ${isFuture ? 'opacity-90' : ''}`}
                 >
                   <div className={`text-[10px] font-medium ${isSel ? 'text-white/90' : 'text-gray-500'}`}>
                     {format(d, 'EEE').toUpperCase()}

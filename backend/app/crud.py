@@ -269,6 +269,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 selected_week_start = selected_day - timedelta(days=selected_day.weekday())
                 # Задача выполнена только если выбранный день в той же неделе, что и выполнение
                 task_completed_for_date = (selected_week_start == completed_week_start)
+            # Если это будущая дата - задача всегда невыполнена
+            elif selected_day > today:
+                task_completed_for_date = False
             elif not is_past_date:
                 task_completed_for_date = task.completed
         
@@ -283,6 +286,9 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 selected_month_start = selected_day.replace(day=1)
                 # Задача выполнена только если выбранный день в том же месяце, что и выполнение
                 task_completed_for_date = (selected_month_start == completed_month_start)
+            # Если это будущая дата - задача всегда невыполнена
+            elif selected_day > today:
+                task_completed_for_date = False
             elif not is_past_date:
                 task_completed_for_date = task.completed
         
@@ -300,7 +306,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             if not task_created_day or selected_day >= task_created_day:
                 filtered_tasks.append(task)
         
-        # Еженедельные задачи - показываем только если выбранный день в той же неделе, что и актуальная неделя задачи
+        # Еженедельные задачи - показываем для будущих недель, если задача не выполнена
         elif frequency == 'weekly':
             if task_created_day:
                 # Определяем неделю выбранной даты
@@ -321,14 +327,19 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                     if selected_week_start == completed_week_start:
                         filtered_tasks.append(task)
                 else:
-                    # Невыполненная задача - показываем если выбранный день в текущей активной неделе
-                    # Текущая активная неделя начинается с недели создания и продолжается до выполнения
+                    # Невыполненная задача - показываем для всех недель начиная с недели создания
+                    # Для будущих дат показываем задачи для будущих недель
                     if selected_week_start >= task_week_start:
-                        # Проверяем, не началась ли уже следующая неделя (если это не прошлая дата)
-                        if is_past_date or selected_week_start <= current_week_start:
+                        # Для прошлых дат - только если неделя не позже текущей
+                        # Для будущих дат - показываем все будущие недели
+                        if is_past_date:
+                            if selected_week_start <= current_week_start:
+                                filtered_tasks.append(task)
+                        else:
+                            # Будущая или текущая дата - показываем задачу
                             filtered_tasks.append(task)
         
-        # Месячные задачи - показываем только если выбранный день в том же месяце, что и актуальный месяц задачи
+        # Месячные задачи - показываем для будущих месяцев, если задача не выполнена
         elif frequency == 'monthly':
             if task_created_day:
                 # Определяем месяц выбранной даты
@@ -349,11 +360,16 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                     if selected_month_start == completed_month_start:
                         filtered_tasks.append(task)
                 else:
-                    # Невыполненная задача - показываем если выбранный день в текущем активном месяце
-                    # Текущий активный месяц начинается с месяца создания и продолжается до выполнения
+                    # Невыполненная задача - показываем для всех месяцев начиная с месяца создания
+                    # Для будущих дат показываем задачи для будущих месяцев
                     if selected_month_start >= task_month_start:
-                        # Проверяем, не начался ли уже следующий месяц (если это не прошлая дата)
-                        if is_past_date or selected_month_start <= current_month_start:
+                        # Для прошлых дат - только если месяц не позже текущего
+                        # Для будущих дат - показываем все будущие месяцы
+                        if is_past_date:
+                            if selected_month_start <= current_month_start:
+                                filtered_tasks.append(task)
+                        else:
+                            # Будущая или текущая дата - показываем задачу
                             filtered_tasks.append(task)
     
     return filtered_tasks
