@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, func, Enum
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, func
 from sqlalchemy.orm import relationship
 from .database import Base
-import enum
-
-
-class RepeatType(enum.Enum):
-    NONE = "NONE"
-    DAILY = "DAILY"
-    WEEKLY = "WEEKLY"
-    MONTHLY = "MONTHLY"
-    CUSTOM = "CUSTOM"
 
 
 class Task(Base):
@@ -24,8 +15,7 @@ class Task(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed = Column(Boolean, default=False, nullable=False)
     
-    # Новые поля для повторяющихся задач
-    repeat_type = Column(Enum(RepeatType), default=RepeatType.NONE, nullable=False)
+    # Поля для повторяющихся задач
     repeat_interval = Column(Integer, default=1, nullable=False)  # каждые N дней/недель/месяцев
     next_due_date = Column(DateTime(timezone=True), nullable=True)
     end_date = Column(DateTime(timezone=True), nullable=True)  # когда прекратить повторение

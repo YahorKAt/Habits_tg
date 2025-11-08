@@ -8,27 +8,15 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
 
-def create_task(db: Session, user_id: int, title: str, description=None, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
+def create_task(db: Session, user_id: int, title: str, description=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
     # Преобразуем пустую строку в None для description
     if description is not None and description.strip() == '':
         description = None
-    
-    # Синхронизируем repeat_type с frequency, если repeat_type не указан явно
-    if repeat_type is None:
-        if frequency == 'daily':
-            repeat_type = models.RepeatType.DAILY
-        elif frequency == 'weekly':
-            repeat_type = models.RepeatType.WEEKLY
-        elif frequency == 'monthly':
-            repeat_type = models.RepeatType.MONTHLY
-        else:
-            repeat_type = models.RepeatType.NONE
     
     task = models.Task(
         user_id=user_id, 
         title=title,
         description=description,
-        repeat_type=repeat_type,
         repeat_interval=repeat_interval,
         next_due_date=next_due_date,
         end_date=end_date,
@@ -47,25 +35,13 @@ def get_task(db: Session, task_id: int, user_id: int) -> Optional[models.Task]:
     ).scalar_one_or_none()
 
 
-def update_task(db: Session, task_id: int, user_id: int, title: str, description=None, repeat_type=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> Optional[models.Task]:
+def update_task(db: Session, task_id: int, user_id: int, title: str, description=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> Optional[models.Task]:
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return None
     
-    # Синхронизируем repeat_type с frequency, если repeat_type не указан явно
-    if repeat_type is None:
-        if frequency == 'daily':
-            repeat_type = models.RepeatType.DAILY
-        elif frequency == 'weekly':
-            repeat_type = models.RepeatType.WEEKLY
-        elif frequency == 'monthly':
-            repeat_type = models.RepeatType.MONTHLY
-        else:
-            repeat_type = models.RepeatType.NONE
-    
     task.title = title
     task.description = description
-    task.repeat_type = repeat_type
     task.repeat_interval = repeat_interval
     task.next_due_date = next_due_date
     task.end_date = end_date
@@ -394,8 +370,8 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool)
         task.last_completed_date = completion_date
         # Вычисляем новый стрик
         task.streak = calculate_streak_on_complete(task, completion_date)
-        # Если задача повторяющаяся, обновляем следующую дату выполнения
-        if task.repeat_type != models.RepeatType.NONE:
+        # Если задача повторяющаяся (на основе frequency), обновляем следующую дату выполнения
+        if task.frequency in ('daily', 'weekly', 'monthly'):
             task.next_due_date = calculate_next_due_date(task)
     else:
         # При отмене выполнения сбрасываем дату и стрик
@@ -411,24 +387,21 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool)
 
 
 def calculate_next_due_date(task: models.Task) -> Optional[datetime]:
-    """Вычисляет следующую дату выполнения для повторяющейся задачи"""
-    if task.repeat_type == models.RepeatType.NONE:
+    """Вычисляет следующую дату выполнения для повторяющейся задачи на основе frequency"""
+    if not task.frequency:
         return None
     
     base_date = task.last_completed_date or task.created_at
     if not base_date:
         return None
     
-    if task.repeat_type == models.RepeatType.DAILY:
+    if task.frequency == 'daily':
         return base_date + timedelta(days=task.repeat_interval)
-    elif task.repeat_type == models.RepeatType.WEEKLY:
+    elif task.frequency == 'weekly':
         return base_date + timedelta(weeks=task.repeat_interval)
-    elif task.repeat_type == models.RepeatType.MONTHLY:
+    elif task.frequency == 'monthly':
         # Простая логика для месяцев (30 дней)
         return base_date + timedelta(days=30 * task.repeat_interval)
-    elif task.repeat_type == models.RepeatType.CUSTOM:
-        # Для кастомного типа используем next_due_date если он задан
-        return task.next_due_date
     
     return None
 

@@ -3,13 +3,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import datetime
-from .models import RepeatType
 
 
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
-    repeat_type: RepeatType = RepeatType.NONE
     repeat_interval: int = 1
     next_due_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -43,7 +41,6 @@ class TaskOut(BaseModel):
     description: Optional[str]
     created_at: datetime
     completed: bool
-    repeat_type: RepeatType
     repeat_interval: int
     next_due_date: Optional[datetime]
     end_date: Optional[datetime]

@@ -98,6 +98,26 @@ def migrate_all(db: Session):
         else:
             logger.info("⏭️  Поля 'deleted' и 'deleted_at' уже существуют, пропускаем")
         
+        # Миграция 3: Удаление поля repeat_type (заменено на frequency)
+        if column_exists('tasks', 'repeat_type', db):
+            logger.info("🔄 Миграция 3: Удаление поля 'repeat_type' из таблицы tasks...")
+            try:
+                if db.bind.dialect.name == 'sqlite':
+                    # SQLite не поддерживает DROP COLUMN напрямую, нужно пересоздать таблицу
+                    # Для простоты просто пропускаем удаление в SQLite (поле просто не будет использоваться)
+                    logger.warning("⚠️  SQLite не поддерживает DROP COLUMN. Поле 'repeat_type' останется в таблице, но не будет использоваться.")
+                else:  # PostgreSQL
+                    db.execute(text("ALTER TABLE tasks DROP COLUMN IF EXISTS repeat_type"))
+                    db.commit()
+                    logger.info("✅ Поле 'repeat_type' удалено")
+            except Exception as e:
+                logger.warning(f"⚠️  Не удалось удалить поле 'repeat_type': {e}")
+                db.rollback()
+                # Не прерываем выполнение, поле просто останется неиспользуемым
+                logger.info("⚠️  Поле 'repeat_type' останется в таблице, но не будет использоваться")
+        else:
+            logger.info("⏭️  Поле 'repeat_type' уже удалено, пропускаем")
+        
         logger.info("✅ Все миграции проверены и применены успешно")
         
     except Exception as e:
