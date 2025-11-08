@@ -374,9 +374,10 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool)
         if task.frequency in ('daily', 'weekly', 'monthly'):
             task.next_due_date = calculate_next_due_date(task)
     else:
-        # При отмене выполнения сбрасываем дату и стрик
+        # При отмене выполнения сбрасываем дату, стрик и следующую дату выполнения
         task.last_completed_date = None
         task.streak = 0
+        task.next_due_date = None
     
     task.completed = completed
     db.commit()
