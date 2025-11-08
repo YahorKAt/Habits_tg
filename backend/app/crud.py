@@ -616,13 +616,15 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     target_month_start = target_date.replace(day=1)
     
     # Получаем все оригинальные задачи (без parent_task_id) для всех пользователей
+    # Загружаем подзадачи явно, чтобы они были доступны при копировании
     original_tasks = db.execute(
         select(models.Task)
         .where(
             models.Task.parent_task_id == None,
             models.Task.deleted == False
         )
-    ).scalars().all()
+        .options(joinedload(models.Task.subtasks))
+    ).unique().scalars().all()
     
     created_count = 0
     
@@ -723,15 +725,22 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             db.add(new_task)
             created_count += 1
             
-            # Копируем подзадачи из оригинальной задачи
+            # Копируем подзадачи из оригинальной задачи со статусом "не выполнено"
+            # Подзадачи уже загружены через joinedload выше
+            subtasks_count = 0
             for subtask in original_task.subtasks:
                 new_subtask = models.Subtask(
                     task_id=new_task.id,
                     title=subtask.title,
-                    completed=False
+                    completed=False  # Всегда создаем со статусом "не выполнено"
                 )
                 new_subtask.created_at = target_date
                 db.add(new_subtask)
+                subtasks_count += 1
+                logger.debug(f"Created subtask '{subtask.title}' for task {new_task.id} on {target_date.date()}")
+            
+            if subtasks_count > 0:
+                logger.debug(f"Created {subtasks_count} subtasks for task {new_task.id}")
     
     if created_count > 0:
         db.commit()
