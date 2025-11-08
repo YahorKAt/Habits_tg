@@ -770,7 +770,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                     {task.frequency === 'daily' ? 'Ежедневно' :
                       task.frequency === 'weekly' ? 'Еженедельно' : 'Ежемесячно'}
                   </span>
-                  {task.streak > 1 && (
+                  {task.streak > 0 && (
                     <span className="text-sm bg-orange-500 text-white px-2 py-1 rounded-full flex items-center gap-1">
                       🔥 {task.streak}
                     </span>

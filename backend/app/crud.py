@@ -29,7 +29,7 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
         category=category,
         frequency=frequency,
         parent_task_id=None,  # Не используем parent_task_id
-        streak=1  # Первая задача всегда со стриком 1
+        streak=0  # Первая задача всегда со стриком 0
     )
     db.add(task)
     db.commit()
@@ -716,8 +716,8 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             
             # Определяем стрик на основе предыдущей задачи:
             # - Если предыдущая задача была выполнена: стрик = предыдущий_стрик + 1
-            # - Если не выполнена: стрик = 1
-            new_streak = 1
+            # - Если не выполнена: стрик = 0
+            new_streak = 0
             if source_task.completed:
                 new_streak = source_task.streak + 1
             
