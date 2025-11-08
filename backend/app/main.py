@@ -207,21 +207,24 @@ def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = 
 
 @app.put("/task/{task_id}")
 def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    task = crud.update_task(
-        db, 
-        task_id=task_id,
-        user_id=user_id, 
-        title=payload.title,
-        description=payload.description,
-        repeat_interval=payload.repeat_interval,
-        next_due_date=payload.next_due_date,
-        end_date=payload.end_date,
-        category=payload.category,
-        frequency=payload.frequency
-    )
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    try:
+        task = crud.update_task(
+            db, 
+            task_id=task_id,
+            user_id=user_id, 
+            title=payload.title,
+            description=payload.description,
+            repeat_interval=payload.repeat_interval,
+            next_due_date=payload.next_due_date,
+            end_date=payload.end_date,
+            category=payload.category,
+            frequency=payload.frequency
+        )
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return task
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/subtask")
@@ -243,10 +246,13 @@ def delete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int 
 
 @app.delete("/task/{task_id}")
 def delete_task(task_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    deleted = crud.delete_task(db, task_id=task_id, user_id=user_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return {"ok": True}
+    try:
+        deleted = crud.delete_task(db, task_id=task_id, user_id=user_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/tasks")
@@ -268,14 +274,17 @@ def list_tasks(
 
 @app.post("/task/{task_id}/complete")
 def complete_task(task_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    # Получаем задачу чтобы узнать текущее состояние
-    task = crud.get_task(db, task_id=task_id, user_id=user_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    # Переключаем состояние (toggle)
-    new_completed_state = not task.completed
-    task = crud.set_task_completed(db, task_id=task_id, user_id=user_id, completed=new_completed_state)
-    return task
+    try:
+        # Получаем задачу чтобы узнать текущее состояние
+        task = crud.get_task(db, task_id=task_id, user_id=user_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        # Переключаем состояние (toggle)
+        new_completed_state = not task.completed
+        task = crud.set_task_completed(db, task_id=task_id, user_id=user_id, completed=new_completed_state)
+        return task
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/subtask/{subtask_id}/complete")

@@ -17,6 +17,8 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
         description = None
     
     # Создаем оригинальную задачу (parent_task_id = None)
+    # Оригинальная задача уже является задачей для дня создания (created_at = сегодня)
+    # Для будущих дней будут создаваться дочерние задачи через generate_daily_tasks()
     task = models.Task(
         user_id=user_id, 
         title=title,
@@ -32,10 +34,6 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
     db.commit()
     db.refresh(task)
     
-    # Сразу создаем задачу для сегодняшнего дня/недели/месяца
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    generate_daily_tasks(db, today)
-    
     return task
 
 
@@ -49,6 +47,16 @@ def update_task(db: Session, task_id: int, user_id: int, title: str, description
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return None
+    
+    # Проверяем, не является ли дата создания задачи будущей датой
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
+    if task_created_day and task_created_day.tzinfo is None:
+        task_created_day = task_created_day.replace(tzinfo=timezone.utc)
+    
+    if task_created_day and task_created_day > today:
+        # Нельзя редактировать задачи для будущих дат
+        raise ValueError("Cannot edit tasks for future dates")
     
     task.title = title
     task.description = description
@@ -92,6 +100,17 @@ def delete_task(db: Session, task_id: int, user_id: int) -> bool:
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return False
+    
+    # Проверяем, не является ли дата создания задачи будущей датой
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
+    if task_created_day and task_created_day.tzinfo is None:
+        task_created_day = task_created_day.replace(tzinfo=timezone.utc)
+    
+    if task_created_day and task_created_day > today:
+        # Нельзя удалять задачи для будущих дат
+        raise ValueError("Cannot delete tasks for future dates")
+    
     task.deleted = True
     task.deleted_at = datetime.now(timezone.utc)
     db.commit()
@@ -194,6 +213,16 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool)
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return None
+    
+    # Проверяем, не является ли дата создания задачи будущей датой
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
+    if task_created_day and task_created_day.tzinfo is None:
+        task_created_day = task_created_day.replace(tzinfo=timezone.utc)
+    
+    if task_created_day and task_created_day > today:
+        # Нельзя изменять статус задач для будущих дат
+        raise ValueError("Cannot modify task status for future dates")
     
     completion_date = datetime.now(timezone.utc)
     
