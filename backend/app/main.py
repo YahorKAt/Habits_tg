@@ -307,32 +307,6 @@ def list_tasks(
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
 
 
-@app.post("/tasks/generate-next-day")
-def generate_next_day_tasks(
-    db: Session = Depends(get_db),
-    user_id: int = Depends(get_user_id)
-):
-    """
-    Генерирует задачи для следующего дня (симуляция смены дня).
-    Используется для тестирования и симуляции.
-    """
-    try:
-        from datetime import datetime, timedelta
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        next_day = today + timedelta(days=1)
-        
-        count = crud.generate_daily_tasks(db, next_day)
-        logger.info(f"Generated {count} tasks for next day ({next_day.date()})")
-        
-        return {
-            "ok": True,
-            "date": next_day.isoformat(),
-            "tasks_created": count,
-            "message": f"Created {count} tasks for {next_day.date()}"
-        }
-    except Exception as e:
-        logger.error(f"Error generating next day tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate tasks: {str(e)}")
 
 
 @app.post("/task/{task_id}/complete")

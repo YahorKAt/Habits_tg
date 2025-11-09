@@ -49,19 +49,6 @@ def update_task(db: Session, task_id: int, user_id: int, title: str, description
     if not task:
         return None
     
-    # Используем время клиента, если передано
-    now = current_time if current_time else datetime.now()
-    # Проверяем, не является ли дата создания задачи будущей датой
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
-    # Убираем timezone для сравнения (используем локальное время)
-    if task_created_day and task_created_day.tzinfo:
-        task_created_day = task_created_day.replace(tzinfo=None)
-    
-    if task_created_day and task_created_day > today:
-        # Нельзя редактировать задачи для будущих дат
-        raise ValueError("Cannot edit tasks for future dates")
-    
     task.title = title
     task.description = description
     task.repeat_interval = repeat_interval
@@ -107,17 +94,6 @@ def delete_task(db: Session, task_id: int, user_id: int, current_time: datetime 
     
     # Используем время клиента, если передано
     now = current_time if current_time else datetime.now()
-    # Проверяем, не является ли дата создания задачи будущей датой
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
-    # Убираем timezone для сравнения (используем локальное время)
-    if task_created_day and task_created_day.tzinfo:
-        task_created_day = task_created_day.replace(tzinfo=None)
-    
-    if task_created_day and task_created_day > today:
-        # Нельзя удалять задачи для будущих дат
-        raise ValueError("Cannot delete tasks for future dates")
-    
     task.deleted = True
     task.deleted_at = now
     db.commit()
@@ -146,14 +122,6 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         selected_day = selected_day.replace(tzinfo=None)
     if today.tzinfo:
         today = today.replace(tzinfo=None)
-    
-    # Для будущих дат или сегодня - генерируем задачи если их еще нет
-    if selected_day >= today:
-        try:
-            generate_daily_tasks(db, selected_day)
-        except Exception as e:
-            logger.error(f"Error generating tasks for {selected_day.date()}: {e}", exc_info=True)
-            # Продолжаем выполнение даже если генерация не удалась
     
     # Получаем задачи для выбранной даты
     # Фильтруем по created_at = selected_day (для ежедневных задач)
@@ -228,7 +196,7 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool,
     
     # Используем время клиента, если передано
     now = current_time if current_time else datetime.now()
-    # Проверяем, не является ли дата создания задачи будущей датой
+    # Проверяем, не является ли дата создания задачи прошлой датой
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = today - timedelta(days=1)
     task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
@@ -236,9 +204,6 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool,
     if task_created_day and task_created_day.tzinfo:
         task_created_day = task_created_day.replace(tzinfo=None)
     
-    if task_created_day and task_created_day > today:
-        # Нельзя изменять статус задач для будущих дат
-        raise ValueError("Cannot modify task status for future dates")
     if task_created_day and task_created_day < yesterday:
         # Нельзя изменять статус задач для прошлых дат (позавчера и раньше)
         raise ValueError("Cannot modify task status for past dates")
