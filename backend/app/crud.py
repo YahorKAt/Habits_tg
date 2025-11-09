@@ -18,7 +18,6 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
     
     # Создаем задачу для текущего дня
     # Для будущих дней будут создаваться новые независимые задачи через generate_daily_tasks()
-    # Каждая задача независима, parent_task_id не используется
     task = models.Task(
         user_id=user_id, 
         title=title,
@@ -28,7 +27,6 @@ def create_task(db: Session, user_id: int, title: str, description=None, repeat_
         end_date=end_date,
         category=category,
         frequency=frequency,
-        parent_task_id=None,  # Не используем parent_task_id
         streak=0  # Первая задача всегда со стриком 0
     )
     db.add(task)
@@ -579,15 +577,13 @@ def delete_note(db: Session, note_id: int, user_id: int) -> bool:
 
 def generate_daily_tasks(db: Session, target_date: datetime = None):
     """
-    Генерирует задачи для нового дня/недели/месяца.
-    Создает независимые задачи на основе задач предыдущего периода.
-    Вызывается автоматически при наступлении 00:00 каждый день.
+    Генерирует задачи для нового дня.
+    В 00:00 10 ноября создает задачи для 10 ноября на основе задач 9 ноября.
     
     Логика:
-    - В 00:00 10 ноября создает задачи для 10 ноября на основе задач 9 ноября
-    - Копирует все задачи и подзадачи независимо от статуса выполнения
-    - НЕ создает задачи, которые были удалены (deleted = True)
-    - Для каждой задачи создает новые подзадачи со статусом "не выполнено"
+    - Находит все задачи из предыдущего дня (кроме удаленных)
+    - Создает новые задачи для нового дня с created_at = новый день
+    - Копирует все подзадачи со статусом "не выполнено"
     
     Args:
         target_date: Дата, для которой нужно создать задачи (по умолчанию - сегодня)
@@ -595,26 +591,22 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     if target_date is None:
         target_date = datetime.now()
     
+    # Нормализуем даты
     target_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    target_week_start = target_date - timedelta(days=target_date.weekday())
-    target_month_start = target_date.replace(day=1)
-    
-    # Определяем предыдущий период для поиска задач-источников
-    # Для генерации задач на завтра ищем задачи сегодняшнего дня
     prev_date = target_date - timedelta(days=1)
-    prev_week_start = prev_date - timedelta(days=prev_date.weekday())
-    prev_month_start = prev_date.replace(day=1)
     
-    # Также проверяем сегодняшний день, если задача была создана сегодня
-    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_week_start = today - timedelta(days=today.weekday())
-    today_month_start = today.replace(day=1)
-    
-    # Для сравнения с timezone-aware полями создаем диапазон дат
+    # Создаем диапазоны для сравнения с timezone-aware полями в БД
+    # Ищем все задачи, у которых created_at попадает в диапазон предыдущего дня
+    # Например, для 10 ноября ищем задачи с created_at от 00:00 9 ноября до 00:00 10 ноября
     prev_date_start = prev_date
     prev_date_end = prev_date + timedelta(days=1)
     
+    # Для проверки существующих задач
+    target_date_start = target_date
+    target_date_end = target_date + timedelta(days=1)
+    
     logger.info(f"🔄 Generating tasks for {target_date.date()}, looking for tasks from {prev_date.date()}")
+    logger.info(f"   Date range: {prev_date_start} <= created_at < {prev_date_end}")
     
     created_count = 0
     
@@ -624,20 +616,15 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     ).scalars().all()
     
     if not all_user_ids:
-        logger.info("No users with tasks found")
+        logger.info("⚠️ No users with tasks found")
         return 0
     
-    logger.info(f"Found {len(all_user_ids)} users with tasks")
+    logger.info(f"📋 Found {len(all_user_ids)} users with tasks")
     
     for user_id in all_user_ids:
-        # Ищем задачи предыдущего периода для копирования
-        source_tasks = []
-        
-        # Для ежедневных задач - ищем задачи предыдущего дня
-        # Копируем все задачи независимо от статуса выполнения (completed может быть True или False)
-        # НЕ копируем только удаленные задачи (deleted = True)
+        # Ищем все задачи предыдущего дня (кроме удаленных)
         # Используем диапазон дат для правильного сравнения с timezone-aware полями
-        daily_tasks_prev = db.execute(
+        source_tasks = db.execute(
             select(models.Task)
             .where(
                 models.Task.user_id == user_id,
@@ -649,63 +636,11 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             .options(joinedload(models.Task.subtasks))
         ).unique().scalars().all()
         
-        # Если не нашли задачи предыдущего дня и target_date > today, ищем задачи сегодняшнего дня
-        # Это нужно для случая, когда задача создана сегодня, а мы генерируем задачи на завтра
-        if len(daily_tasks_prev) == 0 and target_date > today:
-            today_start = today
-            today_end = today + timedelta(days=1)
-            daily_tasks_today = db.execute(
-                select(models.Task)
-                .where(
-                    models.Task.user_id == user_id,
-                    models.Task.frequency == 'daily',
-                    models.Task.deleted == False,
-                    models.Task.created_at >= today_start,
-                    models.Task.created_at < today_end
-                )
-                .options(joinedload(models.Task.subtasks))
-            ).unique().scalars().all()
-            source_tasks.extend(daily_tasks_today)
-            logger.info(f"Found {len(daily_tasks_today)} tasks from today for user {user_id} (target: {target_date.date()})")
-        else:
-            source_tasks.extend(daily_tasks_prev)
-            if len(daily_tasks_prev) > 0:
-                logger.info(f"Found {len(daily_tasks_prev)} tasks from previous day ({prev_date.date()}) for user {user_id} (target: {target_date.date()})")
-            else:
-                logger.info(f"No tasks found from previous day ({prev_date.date()}) for user {user_id}")
+        if len(source_tasks) == 0:
+            logger.info(f"  User {user_id}: No tasks found from {prev_date.date()}")
+            continue
         
-        # Для еженедельных задач - ищем задачи предыдущей недели (только в понедельник)
-        if target_date.weekday() == 0:  # Понедельник
-            weekly_tasks = db.execute(
-                select(models.Task)
-                .where(
-                    models.Task.user_id == user_id,
-                    models.Task.frequency == 'weekly',
-                    models.Task.deleted == False,
-                    func.date(models.Task.created_at) >= func.date(prev_week_start),
-                    func.date(models.Task.created_at) < func.date(prev_week_start + timedelta(days=7))
-                )
-                .options(joinedload(models.Task.subtasks))
-            ).unique().scalars().all()
-            source_tasks.extend(weekly_tasks)
-        
-        # Для месячных задач - ищем задачи предыдущего месяца (только 1-го числа)
-        if target_date.day == 1:  # Первое число месяца
-            prev_month_end = target_month_start - timedelta(days=1)
-            monthly_tasks = db.execute(
-                select(models.Task)
-                .where(
-                    models.Task.user_id == user_id,
-                    models.Task.frequency == 'monthly',
-                    models.Task.deleted == False,
-                    func.date(models.Task.created_at) >= func.date(prev_month_start),
-                    func.date(models.Task.created_at) <= func.date(prev_month_end)
-                )
-                .options(joinedload(models.Task.subtasks))
-            ).unique().scalars().all()
-            source_tasks.extend(monthly_tasks)
-        
-        logger.info(f"Processing {len(source_tasks)} source tasks for user {user_id}")
+        logger.info(f"  User {user_id}: Found {len(source_tasks)} tasks from {prev_date.date()}")
         
         # Для каждой найденной задачи создаем новую задачу
         for source_task in source_tasks:
@@ -717,54 +652,32 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             if source_task.end_date and target_date > end_date:
                 continue
             
-            # Проверяем, была ли уже создана задача для этой даты/недели/месяца
-            existing_task = None
-            if source_task.frequency == 'daily':
-                target_date_start = target_date
-                target_date_end = target_date + timedelta(days=1)
-                existing_task = db.execute(
-                    select(models.Task)
-                    .where(
-                        models.Task.user_id == user_id,
-                        models.Task.frequency == 'daily',
-                        models.Task.title == source_task.title,  # Ищем по названию
-                        models.Task.created_at >= target_date_start,
-                        models.Task.created_at < target_date_end
-                    )
-                ).scalar_one_or_none()
-            elif source_task.frequency == 'weekly':
-                existing_task = db.execute(
-                    select(models.Task)
-                    .where(
-                        models.Task.user_id == user_id,
-                        models.Task.frequency == 'weekly',
-                        models.Task.title == source_task.title,
-                        func.date(models.Task.created_at) >= func.date(target_week_start),
-                        func.date(models.Task.created_at) < func.date(target_week_start + timedelta(days=7))
-                    )
-                ).scalar_one_or_none()
-            elif source_task.frequency == 'monthly':
-                next_month_start = (target_month_start + relativedelta(months=1)).replace(day=1)
-                existing_task = db.execute(
-                    select(models.Task)
-                    .where(
-                        models.Task.user_id == user_id,
-                        models.Task.frequency == 'monthly',
-                        models.Task.title == source_task.title,
-                        func.date(models.Task.created_at) >= func.date(target_month_start),
-                        func.date(models.Task.created_at) < func.date(next_month_start)
-                    )
-                ).scalar_one_or_none()
+            # Проверяем, была ли уже создана задача для этой даты
+            existing_task = db.execute(
+                select(models.Task)
+                .where(
+                    models.Task.user_id == user_id,
+                    models.Task.frequency == 'daily',
+                    models.Task.title == source_task.title,  # Ищем по названию
+                    models.Task.created_at >= target_date_start,
+                    models.Task.created_at < target_date_end
+                )
+            ).scalar_one_or_none()
             
             if existing_task:
-                continue  # Задача уже создана для этого периода
+                logger.debug(f"    Task '{source_task.title}' already exists for {target_date.date()}, skipping")
+                continue  # Задача уже создана для этого дня
             
             # Определяем стрик на основе предыдущей задачи:
-            # - Если предыдущая задача была выполнена: стрик = предыдущий_стрик + 1
-            # - Если не выполнена: стрик = 0
+            # - Если предыдущая задача была выполнена (completed = True): стрик = предыдущий_стрик + 1
+            # - Если не выполнена (completed = False): стрик = 0
             new_streak = 0
             if source_task.completed:
+                # Задача была выполнена 9 ноября, увеличиваем стрик для задачи 10 ноября
                 new_streak = source_task.streak + 1
+                logger.debug(f"    Task '{source_task.title}' was completed, new streak: {new_streak}")
+            else:
+                logger.debug(f"    Task '{source_task.title}' was not completed, streak reset to 0")
             
             # Создаем новую независимую задачу
             new_task = models.Task(
@@ -776,7 +689,6 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
                 end_date=source_task.end_date,
                 category=source_task.category,
                 frequency=source_task.frequency,
-                parent_task_id=None,  # Не используем parent_task_id
                 completed=False,
                 streak=new_streak,  # Устанавливаем стрик на основе предыдущей задачи
                 deleted=False

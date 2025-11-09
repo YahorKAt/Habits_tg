@@ -311,6 +311,30 @@ def list_tasks(
 
 
 
+@app.post("/tasks/generate-today")
+def generate_today_tasks(
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_user_id)
+):
+    """
+    Ручной запуск генерации задач для сегодняшнего дня.
+    Используется для тестирования.
+    """
+    try:
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        count = crud.generate_daily_tasks(db, today)
+        logger.info(f"Manual generation: Created {count} tasks for {today.date()}")
+        return {
+            "ok": True,
+            "date": today.isoformat(),
+            "tasks_created": count,
+            "message": f"Created {count} tasks for {today.date()}"
+        }
+    except Exception as e:
+        logger.error(f"Error in manual task generation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate tasks: {str(e)}")
+
+
 @app.post("/task/{task_id}/complete")
 def complete_task(task_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
     try:
