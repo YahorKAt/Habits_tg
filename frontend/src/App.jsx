@@ -249,11 +249,14 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
   }, [isEditing, subtask])
 
   async function api(path, options = {}) {
+    // Отправляем текущее время клиента в заголовке для синхронизации с сервером
+    const clientTime = new Date().toISOString()
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-Telegram-Init-Data': initData,
+        'X-Client-Time': clientTime,  // Время клиента для синхронизации
         ...(options.headers || {})
       }
     })
@@ -374,11 +377,14 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
 
   async function api(path, options = {}) {
+    // Отправляем текущее время клиента в заголовке для синхронизации с сервером
+    const clientTime = new Date().toISOString()
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-Telegram-Init-Data': initData,
+        'X-Client-Time': clientTime,  // Время клиента для синхронизации
         ...(options.headers || {})
       }
     })
@@ -975,8 +981,13 @@ function StatisticsPage() {
   const [loading, setLoading] = useState(false)
 
   async function api(path) {
+    // Отправляем текущее время клиента в заголовке для синхронизации с сервером
+    const clientTime = new Date().toISOString()
     const res = await fetch(`${API_URL}${path}`, {
-      headers: { 'X-Telegram-Init-Data': initData }
+      headers: {
+        'X-Telegram-Init-Data': initData,
+        'X-Client-Time': clientTime  // Время клиента для синхронизации
+      }
     })
     if (!res.ok) throw new Error(await res.text())
     return await res.json()

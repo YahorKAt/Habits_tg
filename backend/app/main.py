@@ -12,10 +12,29 @@ from sqlalchemy.orm import Session
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 from .telegram_auth import parse_and_validate_init_data
+
+def get_client_time(header_client_time: str = Header(None, alias="X-Client-Time")) -> datetime:
+    """
+    Получает время клиента из заголовка запроса.
+    Если заголовок не передан, использует локальное время сервера.
+    """
+    if header_client_time:
+        try:
+            # Парсим ISO формат времени от клиента
+            client_time = datetime.fromisoformat(header_client_time.replace('Z', '+00:00'))
+            # Преобразуем в локальное время (убираем timezone)
+            if client_time.tzinfo:
+                # Конвертируем UTC в локальное время сервера
+                client_time = client_time.replace(tzinfo=None)
+            return client_time
+        except (ValueError, AttributeError):
+            pass
+    # Если заголовок не передан или невалидный - используем время сервера
+    return datetime.now()
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +67,7 @@ def generate_tasks_job():
     """Задача для генерации задач в 00:00 каждый день"""
     try:
         db = next(get_db())
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         count = crud.generate_daily_tasks(db, today)
         logger.info(f"🔄 Scheduled task: Generated {count} tasks for {today.date()}")
     except Exception as e:
@@ -206,7 +225,13 @@ def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = 
 
 
 @app.put("/task/{task_id}")
-def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+def update_task(
+    task_id: int, 
+    payload: TaskCreate, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_user_id),
+    client_time: datetime = Depends(get_client_time)
+):
     try:
         task = crud.update_task(
             db, 
@@ -218,7 +243,8 @@ def update_task(task_id: int, payload: TaskCreate, db: Session = Depends(get_db)
             next_due_date=payload.next_due_date,
             end_date=payload.end_date,
             category=payload.category,
-            frequency=payload.frequency
+            frequency=payload.frequency,
+            current_time=client_time
         )
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -245,9 +271,14 @@ def delete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int 
 
 
 @app.delete("/task/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+def delete_task(
+    task_id: int, 
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_user_id),
+    client_time: datetime = Depends(get_client_time)
+):
     try:
-        deleted = crud.delete_task(db, task_id=task_id, user_id=user_id)
+        deleted = crud.delete_task(db, task_id=task_id, user_id=user_id, current_time=client_time)
         if not deleted:
             raise HTTPException(status_code=404, detail="Task not found")
         return {"ok": True}
@@ -265,8 +296,8 @@ def list_tasks(
         selected_date = None
         if date:
             try:
-                from datetime import datetime, timezone
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                from datetime import datetime
+                selected_date = datetime.strptime(date, "%Y-%m-%d")
             except ValueError:
                 pass  # Игнорируем неверный формат даты
         
@@ -286,8 +317,8 @@ def generate_next_day_tasks(
     Используется для тестирования и симуляции.
     """
     try:
-        from datetime import datetime, timedelta, timezone
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        from datetime import datetime, timedelta
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         next_day = today + timedelta(days=1)
         
         count = crud.generate_daily_tasks(db, next_day)
