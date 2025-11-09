@@ -769,13 +769,15 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             )
             new_task.created_at = target_date
             db.add(new_task)
+            # Делаем flush, чтобы задача получила ID перед созданием подзадач
+            db.flush()
             created_count += 1
             
             # Копируем подзадачи со статусом "не выполнено"
             subtasks_count = 0
             for subtask in source_task.subtasks:
                 new_subtask = models.Subtask(
-                    task_id=new_task.id,
+                    task_id=new_task.id,  # Теперь new_task.id уже не None
                     title=subtask.title,
                     completed=False
                 )
