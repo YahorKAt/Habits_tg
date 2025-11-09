@@ -67,6 +67,7 @@ def generate_tasks_job():
     """Задача для генерации задач в 00:00 каждый день"""
     try:
         db = next(get_db())
+        # В 00:00 создаем задачи для нового дня (сегодня) на основе задач предыдущего дня
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         count = crud.generate_daily_tasks(db, today)
         logger.info(f"🔄 Scheduled task: Generated {count} tasks for {today.date()}")
@@ -82,16 +83,17 @@ def on_startup() -> None:
         logger.info("🚀 Starting up application...")
         init_db()
         
-        # Настраиваем планировщик для генерации задач в 00:00 UTC каждый день
+        # Настраиваем планировщик для генерации задач в 00:00 локального времени каждый день
+        # Используем None для timezone, чтобы использовалось локальное время сервера
         scheduler.add_job(
             generate_tasks_job,
-            trigger=CronTrigger(hour=0, minute=0, timezone='UTC'),
+            trigger=CronTrigger(hour=0, minute=0, timezone=None),  # Локальное время сервера
             id='generate_daily_tasks',
             name='Generate daily tasks at midnight',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("✅ Scheduler started - tasks will be generated at 00:00 UTC daily")
+        logger.info("✅ Scheduler started - tasks will be generated at 00:00 local time daily")
         logger.info("✅ Application started successfully")
     except Exception as e:
         logger.error(f"❌ Failed to start application: {e}", exc_info=True)
