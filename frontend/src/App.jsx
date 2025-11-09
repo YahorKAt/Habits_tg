@@ -370,6 +370,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [selectedDate, setSelectedDate] = useState(new Date())
   const ribbonRef = useRef(null)
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
+  const [maxFutureDays, setMaxFutureDays] = useState(7) // Отслеживаем максимальное количество будущих дней
 
 
   async function api(path, options = {}) {
@@ -392,6 +393,33 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const data = await api(`/tasks?date=${dateStr}`)
       setTasks(data)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const moveToNextDay = async () => {
+    try {
+      setLoading(true)
+      // Генерируем задачи для следующего дня
+      const result = await api('/tasks/generate-next-day', { method: 'POST' })
+      console.log('Next day tasks generated:', result)
+
+      // Переключаемся на следующий день
+      const nextDay = addDays(selectedDate, 1)
+      setSelectedDate(nextDay)
+
+      // Увеличиваем количество будущих дней, если нужно
+      const today = new Date()
+      const daysDiff = Math.ceil((nextDay - today) / (1000 * 60 * 60 * 24))
+      if (daysDiff > maxFutureDays) {
+        setMaxFutureDays(daysDiff + 2) // Добавляем небольшой запас
+      }
+
+      // Задачи загрузятся автоматически через useEffect при изменении selectedDate
+    } catch (error) {
+      console.error('Error moving to next day:', error)
+      alert('Ошибка при переходе на следующий день: ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -447,20 +475,20 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const daysAround = useMemo(() => {
     const days = []
     const today = new Date()
-    // Показываем 30 дней назад и 7 дней вперед
+    // Показываем 30 дней назад и maxFutureDays дней вперед
     for (let i = 30; i >= 0; i--) {
       const d = new Date(today)
       d.setDate(today.getDate() - i)
       days.push(d)
     }
-    // Добавляем 7 дней вперед
-    for (let i = 1; i <= 7; i++) {
+    // Добавляем будущие дни
+    for (let i = 1; i <= maxFutureDays; i++) {
       const d = new Date(today)
       d.setDate(today.getDate() + i)
       days.push(d)
     }
     return days
-  }, [])
+  }, [maxFutureDays])
 
   // Центрируем текущий день при загрузке
   useEffect(() => {
@@ -713,6 +741,17 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
             <div className="text-base font-semibold">
               {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
             </div>
+            <button
+              onClick={moveToNextDay}
+              disabled={loading}
+              className="px-3 py-1.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              title="Перейти на следующий день (симуляция)"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M9 18L15 12L9 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Следующий день
+            </button>
           </div>
           <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1 scroll-smooth">
             {daysAround.map((d) => {
