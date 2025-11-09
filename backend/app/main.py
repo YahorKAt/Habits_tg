@@ -261,15 +261,19 @@ def list_tasks(
     user_id: int = Depends(get_user_id),
     date: str = None  # Опциональный параметр для выбранной даты (YYYY-MM-DD)
 ):
-    selected_date = None
-    if date:
-        try:
-            from datetime import datetime
-            selected_date = datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            pass  # Игнорируем неверный формат даты
-    
-    return crud.list_tasks_with_subtasks(db, user_id=user_id, selected_date=selected_date)
+    try:
+        selected_date = None
+        if date:
+            try:
+                from datetime import datetime, timezone
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass  # Игнорируем неверный формат даты
+        
+        return crud.list_tasks_with_subtasks(db, user_id=user_id, selected_date=selected_date)
+    except Exception as e:
+        logger.error(f"Error in list_tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
 
 
 @app.post("/tasks/generate-next-day")

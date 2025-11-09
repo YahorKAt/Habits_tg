@@ -142,7 +142,11 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     
     # Для будущих дат или сегодня - генерируем задачи если их еще нет
     if selected_day >= today:
-        generate_daily_tasks(db, selected_day)
+        try:
+            generate_daily_tasks(db, selected_day)
+        except Exception as e:
+            logger.error(f"Error generating tasks for {selected_day.date()}: {e}", exc_info=True)
+            # Продолжаем выполнение даже если генерация не удалась
     
     # Получаем задачи для выбранной даты
     # Фильтруем по created_at = selected_day (для ежедневных задач)
@@ -610,9 +614,15 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     target_month_start = target_date.replace(day=1)
     
     # Определяем предыдущий период для поиска задач-источников
+    # Для генерации задач на завтра ищем задачи сегодняшнего дня
     prev_date = target_date - timedelta(days=1)
     prev_week_start = prev_date - timedelta(days=prev_date.weekday())
     prev_month_start = prev_date.replace(day=1)
+    
+    # Также проверяем сегодняшний день, если задача была создана сегодня
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_week_start = today - timedelta(days=today.weekday())
+    today_month_start = today.replace(day=1)
     
     created_count = 0
     
@@ -625,8 +635,10 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
         # Ищем задачи предыдущего периода для копирования
         source_tasks = []
         
-        # Для ежедневных задач - ищем задачи предыдущего дня
-        daily_tasks = db.execute(
+        # Для ежедневных задач - ищем задачи предыдущего дня или сегодняшнего дня
+        # Если задача создана сегодня, для завтра нужно искать задачу сегодняшнего дня
+        # Сначала ищем задачи предыдущего дня
+        daily_tasks_prev = db.execute(
             select(models.Task)
             .where(
                 models.Task.user_id == user_id,
@@ -636,7 +648,26 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             )
             .options(joinedload(models.Task.subtasks))
         ).unique().scalars().all()
-        source_tasks.extend(daily_tasks)
+        
+        # Если не нашли задачи предыдущего дня и target_date > today, ищем задачи сегодняшнего дня
+        # Это нужно для случая, когда задача создана сегодня, а мы генерируем задачи на завтра
+        if len(daily_tasks_prev) == 0 and target_date > today:
+            daily_tasks_today = db.execute(
+                select(models.Task)
+                .where(
+                    models.Task.user_id == user_id,
+                    models.Task.frequency == 'daily',
+                    models.Task.deleted == False,
+                    func.date(models.Task.created_at) == func.date(today)
+                )
+                .options(joinedload(models.Task.subtasks))
+            ).unique().scalars().all()
+            source_tasks.extend(daily_tasks_today)
+            logger.info(f"Found {len(daily_tasks_today)} tasks from today for user {user_id} (target: {target_date.date()})")
+        else:
+            source_tasks.extend(daily_tasks_prev)
+            if len(daily_tasks_prev) > 0:
+                logger.info(f"Found {len(daily_tasks_prev)} tasks from previous day for user {user_id} (target: {target_date.date()})")
         
         # Для еженедельных задач - ищем задачи предыдущей недели (только в понедельник)
         if target_date.weekday() == 0:  # Понедельник
