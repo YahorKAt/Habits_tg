@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
-import { format, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
+import { format, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
 // Импорты утилит и хуков
