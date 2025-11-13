@@ -309,7 +309,6 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [loading, setLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const ribbonRef = useRef(null)
-  const hasScrolledRef = useRef(false) // Флаг для отслеживания первой прокрутки
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
 
 
@@ -387,24 +386,35 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     return days
   }, [])
 
-  // Центрируем текущий день только при первой загрузке
+  // Восстанавливаем позицию скролла или прокручиваем к текущей дате только при первой загрузке
   useEffect(() => {
-    if (ribbonRef.current && daysAround.length > 0 && !hasScrolledRef.current) {
+    if (ribbonRef.current && daysAround.length > 0) {
       // Небольшая задержка для того, чтобы DOM успел отрендериться
       const timeoutId = setTimeout(() => {
-        const today = new Date()
-        const todayIndex = daysAround.findIndex(d => isSameDay(d, today))
+        if (!ribbonRef.current) return
 
-        if (todayIndex !== -1 && ribbonRef.current) {
-          // Используем scrollIntoView для центрирования
-          const todayButton = ribbonRef.current.children[todayIndex]
-          if (todayButton) {
-            todayButton.scrollIntoView({
-              behavior: 'auto',
-              block: 'nearest',
-              inline: 'center'
-            })
-            hasScrolledRef.current = true // Помечаем, что прокрутка уже выполнена
+        // Пытаемся восстановить сохраненную позицию скролла
+        const savedScrollPosition = localStorage.getItem('calendarScrollPosition')
+        if (savedScrollPosition !== null) {
+          ribbonRef.current.scrollLeft = parseInt(savedScrollPosition, 10)
+        } else {
+          // Если сохраненной позиции нет, прокручиваем к текущей дате только при первой загрузке
+          const hasScrolledBefore = localStorage.getItem('calendarHasScrolled')
+          if (!hasScrolledBefore) {
+            const today = new Date()
+            const todayIndex = daysAround.findIndex(d => isSameDay(d, today))
+
+            if (todayIndex !== -1 && ribbonRef.current) {
+              const todayButton = ribbonRef.current.children[todayIndex]
+              if (todayButton) {
+                todayButton.scrollIntoView({
+                  behavior: 'auto',
+                  block: 'nearest',
+                  inline: 'center'
+                })
+                localStorage.setItem('calendarHasScrolled', 'true')
+              }
+            }
           }
         }
       }, 100)
@@ -412,6 +422,19 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       return () => clearTimeout(timeoutId)
     }
   }, [daysAround])
+
+  // Сохраняем позицию скролла при прокрутке
+  useEffect(() => {
+    const ribbon = ribbonRef.current
+    if (!ribbon) return
+
+    const handleScroll = () => {
+      localStorage.setItem('calendarScrollPosition', ribbon.scrollLeft.toString())
+    }
+
+    ribbon.addEventListener('scroll', handleScroll)
+    return () => ribbon.removeEventListener('scroll', handleScroll)
+  }, [])
 
   // Проверяем, является ли выбранная дата прошлой
   const isPastDate = useMemo(() => {
