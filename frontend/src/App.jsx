@@ -1,62 +1,13 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
-import { format, startOfWeek, addDays, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isPast, startOfDay } from 'date-fns'
+import { format, isSameDay, isToday } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-const API_URL = import.meta.env.VITE_API_URL
-
-// Константы для категорий задач
-const TASK_CATEGORIES = {
-  sport: { name: 'Спорт', icon: '🏆', color: '#EF4444' },
-  study: { name: 'Учёба', icon: '🎓', color: '#3B82F6' },
-  work: { name: 'Работа', icon: '💼', color: '#10B981' },
-  personal: { name: 'Личное', icon: '👤', color: '#8B5CF6' },
-}
-
-const FREQUENCY_OPTIONS = [
-  { value: 'daily', label: 'Ежедневно', description: 'Выполняется каждый день' },
-  { value: 'weekly', label: 'Еженедельно', description: 'Выполняется раз в неделю' },
-  { value: 'monthly', label: 'Ежемесячно', description: 'Выполняется раз в месяц' },
-]
-
-// Утилита для получения локального времени клиента с timezone offset
-const getClientLocalTime = () => {
-  const now = new Date()
-  const timezoneOffset = -now.getTimezoneOffset() // минуты от UTC (инвертируем знак)
-  const offsetHours = Math.floor(Math.abs(timezoneOffset) / 60)
-  const offsetMinutes = Math.abs(timezoneOffset) % 60
-  const offsetSign = timezoneOffset >= 0 ? '+' : '-'
-  const offsetString = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetMinutes).padStart(2, '0')}`
-  return now.toISOString().slice(0, -1) + offsetString // Заменяем Z на локальный offset
-}
-
-function useTelegram() {
-  const tg = window.Telegram?.WebApp
-  if (tg.initData) {
-    console.log("Telegram initData found")
-  } else {
-    console.log("No Telegram data detected")
-  }
-  return tg
-}
-
-function useInitData() {
-  const tg = useTelegram()
-  const initData = tg?.initData || ''
-
-  // Диагностика для отладки
-  if (!initData) {
-    console.warn('⚠️ initData is empty!', {
-      tg: !!tg,
-      hasInitData: !!tg?.initData,
-      initDataUnsafe: tg?.initDataUnsafe
-    })
-  } else {
-    console.log('✅ initData available, length:', initData.length)
-  }
-
-  return initData
-}
+// Импорты утилит и хуков
+import { createApiClient } from './utils/api'
+import { useInitData } from './hooks/useTelegram'
+import { TASK_CATEGORIES, FREQUENCY_OPTIONS, MOOD_OPTIONS } from './constants'
+import { formatDateForAPI, isPastDate, getDaysAround } from './utils/dateUtils'
 
 // Компонент для создания новой задачи
 function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
@@ -85,21 +36,7 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
     }
   }, [isEditing, task])
 
-  async function api(path, options = {}) {
-    // Отправляем текущее локальное время клиента с timezone offset
-    const clientTime = getClientLocalTime()
-    const res = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
-        ...(options.headers || {})
-      }
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return await res.json()
-  }
+  const api = createApiClient(initData)
 
   const createTask = async () => {
     if (!title.trim()) return
@@ -262,21 +199,7 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
     }
   }, [isEditing, subtask])
 
-  async function api(path, options = {}) {
-    // Отправляем текущее локальное время клиента с timezone offset
-    const clientTime = getClientLocalTime()
-    const res = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
-        ...(options.headers || {})
-      }
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return await res.json()
-  }
+  const api = createApiClient(initData)
 
   const createSubtask = async () => {
     if (!title.trim()) return
@@ -389,27 +312,13 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
 
 
-  async function api(path, options = {}) {
-    // Отправляем текущее локальное время клиента с timezone offset
-    const clientTime = getClientLocalTime()
-    const res = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
-        ...(options.headers || {})
-      }
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return await res.json()
-  }
+  const api = createApiClient(initData)
 
   const loadTasks = async () => {
     setLoading(true)
     try {
       // Форматируем выбранную дату для запроса
-      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      const dateStr = formatDateForAPI(selectedDate)
       const data = await api(`/tasks?date=${dateStr}`)
       setTasks(data)
     } finally {
@@ -943,18 +852,7 @@ function StatisticsPage() {
   const [habitsStats, setHabitsStats] = useState([])
   const [loading, setLoading] = useState(false)
 
-  async function api(path) {
-    // Отправляем текущее локальное время клиента с timezone offset
-    const clientTime = getClientLocalTime()
-    const res = await fetch(`${API_URL}${path}`, {
-      headers: {
-        'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime  // Локальное время клиента с timezone
-      }
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return await res.json()
-  }
+  const api = createApiClient(initData)
 
   const loadStats = async (p) => {
     setLoading(true)
@@ -1192,30 +1090,8 @@ function JournalPage() {
   const [editContent, setEditContent] = useState('')
   const [editMood, setEditMood] = useState('')
 
-  // Варианты настроения (ключи)
-  const moodOptions = [
-    { value: 'very_bad', label: 'Агрессивное' },
-    { value: 'bad', label: 'Плохое' },
-    { value: 'neutral', label: 'Нормальное' },
-    { value: 'good', label: 'Хорошее' },
-    { value: 'very_good', label: 'Отличное' }
-  ]
 
-  async function api(path, options = {}) {
-    // Отправляем текущее локальное время клиента с timezone offset
-    const clientTime = getClientLocalTime()
-    const res = await fetch(`${API_URL}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
-        ...(options.headers || {})
-      }
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return await res.json()
-  }
+  const api = createApiClient(initData)
 
   const loadNotes = async (date) => {
     setLoading(true)
@@ -1292,7 +1168,7 @@ function JournalPage() {
       setNotes(prev => [created, ...prev])
       setNewNote('')
       setShowCreateForm(false)
-      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      const dateStr = formatDateForAPI(selectedDate)
       setMonthMoodMap(prev => ({ ...prev, [dateStr]: moodToClasses(selectedMood) }))
     } catch (err) {
       console.error(err)
@@ -1341,7 +1217,7 @@ function JournalPage() {
         const created = await api('/notes', { method: 'POST', body: JSON.stringify(payload) })
         setNotes(prev => [created, ...prev.filter(n => n.id !== editingNote.id)])
       }
-      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      const dateStr = formatDateForAPI(selectedDate)
       setMonthMoodMap(prev => ({ ...prev, [dateStr]: moodToClasses(editMood) }))
       cancelEdit()
     } catch (err) {
@@ -1462,7 +1338,7 @@ function JournalPage() {
                               className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
                             >
                               <option value="" disabled>Выберите настроение</option>
-                              {moodOptions.map((m) => (
+                              {MOOD_OPTIONS.map((m) => (
                                 <option key={m.value} value={m.value}>{m.label}</option>
                               ))}
                             </select>
@@ -1517,7 +1393,7 @@ function JournalPage() {
                       className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="" disabled>Выберите настроение</option>
-                      {moodOptions.map((m) => (
+                      {MOOD_OPTIONS.map((m) => (
                         <option key={m.value} value={m.value}>
                           {m.label}
                         </option>

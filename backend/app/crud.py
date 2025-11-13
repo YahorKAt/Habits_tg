@@ -7,6 +7,13 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 import logging
+from .utils.date_utils import (
+    normalize_to_utc,
+    get_today_utc,
+    normalize_date_to_utc_day,
+    get_date_range_for_day,
+    is_past_date as check_is_past_date
+)
 
 logger = logging.getLogger(__name__)
 
@@ -147,57 +154,26 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         current_time: Текущее время клиента (если None - используется время сервера)
     """
     # ВСЕГДА используем UTC для всех вычислений и сравнений
-    # current_time уже должен быть в UTC (конвертирован из локального времени клиента в get_client_time)
-    # Но на всякий случай убеждаемся, что работаем с UTC
-    if current_time:
-        # Если current_time передан, он уже должен быть в UTC (naive)
-        # Но проверяем и конвертируем если нужно
-        if current_time.tzinfo is None:
-            # Считаем что это уже UTC (как возвращает get_client_time)
-            now_utc = current_time
-        else:
-            # Если есть timezone, конвертируем в UTC
-            now_utc = current_time.astimezone(timezone.utc).replace(tzinfo=None)
-    else:
-        # Если current_time не передан, используем UTC сервера
-        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-    
-    # Определяем "сегодня" в UTC (начало дня)
-    today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    today = get_today_utc(current_time)
     
     if selected_date is None:
-        selected_date = now_utc
+        selected_date = normalize_to_utc(current_time) or datetime.now(timezone.utc)
     
-    if selected_date:
-        # Нормализуем selected_date: конвертируем в UTC и делаем naive для сравнения
-        if selected_date.tzinfo is None:
-            # Если naive, считаем что это уже UTC
-            selected_date = selected_date.replace(tzinfo=timezone.utc)
-        # Конвертируем в UTC и делаем naive
-        selected_date_utc = selected_date.astimezone(timezone.utc) if selected_date.tzinfo else selected_date
-        selected_day = selected_date_utc.replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
-        # Создаем диапазон для выбранного дня в UTC
-        # Выбранный день в локальном времени клиента может охватывать 2 дня в UTC
-        # Например, 13 ноября 00:00 +03:00 = 12 ноября 21:00 UTC
-        # Поэтому используем диапазон от начала предыдущего дня до конца следующего дня
+    # Нормализуем выбранную дату в UTC
+    selected_day = normalize_date_to_utc_day(selected_date)
+    
+    # Создаем диапазон для выбранного дня в UTC
+    # Выбранный день в локальном времени клиента может охватывать 2 дня в UTC
+    # Поэтому используем диапазон от начала предыдущего дня до конца следующего дня
+    if selected_day:
         selected_day_start = selected_day - timedelta(days=1)
         selected_day_end = selected_day + timedelta(days=2)
     else:
-        selected_day = None
         selected_day_start = None
         selected_day_end = None
     
-    
-    # Получаем задачи для выбранной даты
-    # Фильтруем по created_at = selected_day (для ежедневных задач)
-    # Или по неделе/месяцу для еженедельных/месячных задач
-    # Определяем, является ли выбранная дата прошлой (строго меньше сегодня)
-    # Это используется для логики отображения (например, блокировка редактирования прошлых дат)
-    if selected_day and today:
-        # Сравниваем даты напрямую
-        is_past_date = selected_day.date() < today.date() if hasattr(selected_day, 'date') else selected_day < today
-    else:
-        is_past_date = False
+    # Определяем, является ли выбранная дата прошлой
+    is_past_date = check_is_past_date(selected_day, today)
     
     # Логирование для отладки
     logger.debug(f"Filtering tasks: selected_day={selected_day}, today={today}, is_past_date={is_past_date}")
