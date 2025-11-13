@@ -182,11 +182,15 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     # Получаем задачи для выбранной даты
     # Фильтруем по created_at = selected_day (для ежедневных задач)
     # Или по неделе/месяцу для еженедельных/месячных задач
-    is_past_date = selected_day < today
+    # Определяем, является ли выбранная дата прошлой (строго меньше сегодня)
+    # Если выбран сегодня или будущее - удаленные задачи не показываем
+    is_past_date = selected_day < today if (selected_day and today) else False
+    
     stmt = select(models.Task).where(models.Task.user_id == user_id)
     
     # Если выбран прошлый день - показываем все задачи (включая удаленные)
     # Если выбран сегодня или будущее - показываем только не удаленные
+    # Удаленные задачи не должны отображаться для текущего дня
     if not is_past_date:
         stmt = stmt.where(models.Task.deleted == False)
     
@@ -206,6 +210,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
             task_created_day = None
         
         # Удаленные задачи показываем только для прошлых дат
+        # Для сегодняшнего дня удаленные задачи не должны отображаться
         if task.deleted:
             if not is_past_date:
                 continue
