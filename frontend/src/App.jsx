@@ -1033,7 +1033,7 @@ function StatisticsPage() {
                           ]
                           : [
                             { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
-                            { name: 'Не выоплнены', value: stats.in_progress || 0, color: '#8B5CF6' },
+                            { name: 'Не выполнено', value: stats.in_progress || 0, color: '#8B5CF6' },
                           ]
                       }
                       cx="50%"
@@ -1050,7 +1050,7 @@ function StatisticsPage() {
                           ? [{ name: 'Выполнено', value: 100, color: '#10B981' }]
                           : [
                             { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
-                            { name: 'Не выоплнены', value: stats.in_progress || 0, color: '#8B5CF6' },
+                            { name: 'Не выполнено', value: stats.in_progress || 0, color: '#8B5CF6' },
                           ]
                       ).map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
@@ -1087,7 +1087,7 @@ function StatisticsPage() {
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full bg-purple-500"></div>
                     <span className="text-sm text-gray-700">
-                      {stats.in_progress || 0} Не выоплнены
+                      {stats.in_progress || 0} Не выполнено
                     </span>
                   </div>
                 </>
