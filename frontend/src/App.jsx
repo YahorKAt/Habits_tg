@@ -19,6 +19,17 @@ const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: 'Ежемесячно', description: 'Выполняется раз в месяц' },
 ]
 
+// Утилита для получения локального времени клиента с timezone offset
+const getClientLocalTime = () => {
+  const now = new Date()
+  const timezoneOffset = -now.getTimezoneOffset() // минуты от UTC (инвертируем знак)
+  const offsetHours = Math.floor(Math.abs(timezoneOffset) / 60)
+  const offsetMinutes = Math.abs(timezoneOffset) % 60
+  const offsetSign = timezoneOffset >= 0 ? '+' : '-'
+  const offsetString = `${offsetSign}${String(offsetHours).padStart(2, '0')}:${String(offsetMinutes).padStart(2, '0')}`
+  return now.toISOString().slice(0, -1) + offsetString // Заменяем Z на локальный offset
+}
+
 function useTelegram() {
   const tg = window.Telegram?.WebApp
   if (tg.initData) {
@@ -75,11 +86,14 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
   }, [isEditing, task])
 
   async function api(path, options = {}) {
+    // Отправляем текущее локальное время клиента с timezone offset
+    const clientTime = getClientLocalTime()
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-Telegram-Init-Data': initData,
+        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
         ...(options.headers || {})
       }
     })
@@ -249,14 +263,14 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
   }, [isEditing, subtask])
 
   async function api(path, options = {}) {
-    // Отправляем текущее время клиента в заголовке для синхронизации с сервером
-    const clientTime = new Date().toISOString()
+    // Отправляем текущее локальное время клиента с timezone offset
+    const clientTime = getClientLocalTime()
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime,  // Время клиента для синхронизации
+        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
         ...(options.headers || {})
       }
     })
@@ -376,14 +390,14 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
 
   async function api(path, options = {}) {
-    // Отправляем текущее время клиента в заголовке для синхронизации с сервером
-    const clientTime = new Date().toISOString()
+    // Отправляем текущее локальное время клиента с timezone offset
+    const clientTime = getClientLocalTime()
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime,  // Время клиента для синхронизации
+        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
         ...(options.headers || {})
       }
     })
@@ -930,12 +944,12 @@ function StatisticsPage() {
   const [loading, setLoading] = useState(false)
 
   async function api(path) {
-    // Отправляем текущее время клиента в заголовке для синхронизации с сервером
-    const clientTime = new Date().toISOString()
+    // Отправляем текущее локальное время клиента с timezone offset
+    const clientTime = getClientLocalTime()
     const res = await fetch(`${API_URL}${path}`, {
       headers: {
         'X-Telegram-Init-Data': initData,
-        'X-Client-Time': clientTime  // Время клиента для синхронизации
+        'X-Client-Time': clientTime  // Локальное время клиента с timezone
       }
     })
     if (!res.ok) throw new Error(await res.text())
@@ -1188,11 +1202,14 @@ function JournalPage() {
   ]
 
   async function api(path, options = {}) {
+    // Отправляем текущее локальное время клиента с timezone offset
+    const clientTime = getClientLocalTime()
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         'X-Telegram-Init-Data': initData,
+        'X-Client-Time': clientTime,  // Локальное время клиента с timezone
         ...(options.headers || {})
       }
     })

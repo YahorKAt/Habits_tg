@@ -12,29 +12,49 @@ from sqlalchemy.orm import Session
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from .telegram_auth import parse_and_validate_init_data
 
 def get_client_time(header_client_time: str = Header(None, alias="X-Client-Time")) -> datetime:
     """
-    Получает время клиента из заголовка запроса.
-    Если заголовок не передан, использует локальное время сервера.
+    Получает локальное время клиента из заголовка запроса и конвертирует в UTC.
+    Клиент отправляет локальное время в ISO формате с timezone offset (например: 2024-11-09T10:30:00.000+03:00).
+    Если заголовок не передан, используем UTC.
     """
     if header_client_time:
         try:
-            # Парсим ISO формат времени от клиента
+            # Парсим ISO формат времени от клиента (локальное время с timezone offset)
             client_time = datetime.fromisoformat(header_client_time.replace('Z', '+00:00'))
-            # Преобразуем в локальное время (убираем timezone)
+            
+            # Если время имеет timezone, конвертируем в UTC
             if client_time.tzinfo:
-                # Конвертируем UTC в локальное время сервера
-                client_time = client_time.replace(tzinfo=None)
+                # Конвертируем локальное время клиента в UTC
+                client_time_utc = client_time.astimezone(timezone.utc)
+                # Возвращаем как naive datetime в UTC (для совместимости с остальным кодом)
+                return client_time_utc.replace(tzinfo=None)
+            # Если timezone нет, считаем что это уже UTC
             return client_time
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Failed to parse client time: {e}")
+            pass
+    # Если заголовок не передан или невалидный - используем UTC
+    return datetime.now(timezone.utc)
+
+def get_client_timezone(header_client_time: str = Header(None, alias="X-Client-Time")):
+    """
+    Получает timezone offset клиента из заголовка запроса.
+    Возвращает timezone объект или None если не удалось определить.
+    """
+    if header_client_time:
+        try:
+            client_time = datetime.fromisoformat(header_client_time.replace('Z', '+00:00'))
+            if client_time.tzinfo:
+                return client_time.tzinfo
         except (ValueError, AttributeError):
             pass
-    # Если заголовок не передан или невалидный - используем время сервера
-    return datetime.now()
+    return None
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -68,7 +88,8 @@ def generate_tasks_job():
     try:
         db = next(get_db())
         # В 00:00 создаем задачи для нового дня (сегодня) на основе задач предыдущего дня
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Используем UTC для сохранения в БД
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         count = crud.generate_daily_tasks(db, today)
         logger.info(f"🔄 Scheduled task: Generated {count} tasks for {today.date()}")
     except Exception as e:
@@ -260,7 +281,7 @@ def add_subtask(payload: SubtaskCreate, db: Session = Depends(get_db), user_id: 
     task = crud.get_task(db, task_id=payload.task_id, user_id=user_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    subtask = crud.create_subtask(db, task_id=payload.task_id, title=payload.title)
+    subtask = crud.create_subtask(db, task_id=payload.task_id, user_id=user_id, title=payload.title)
     return subtask
 
 
@@ -270,6 +291,25 @@ def delete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int 
     if not deleted:
         raise HTTPException(status_code=404, detail="Subtask not found")
     return {"ok": True}
+
+
+@app.post("/subtask/{subtask_id}/complete")
+def complete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    # Получаем текущее состояние подзадачи через временный запрос
+    from sqlalchemy import select
+    from . import models
+    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
+    if not subtask:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    # Проверяем, что подзадача принадлежит пользователю
+    parent_task = crud.get_task(db, task_id=subtask.task_id, user_id=user_id)
+    if not parent_task:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    # Переключаем состояние (toggle)
+    new_completed_state = not subtask.completed
+    subtask = crud.set_subtask_completed(db, subtask_id=subtask_id, user_id=user_id, completed=new_completed_state)
+    return subtask
+
 
 
 @app.delete("/task/{task_id}")
@@ -292,18 +332,43 @@ def delete_task(
 def list_tasks(
     db: Session = Depends(get_db), 
     user_id: int = Depends(get_user_id),
-    date: str = None  # Опциональный параметр для выбранной даты (YYYY-MM-DD)
+    date: str = None,  # Опциональный параметр для выбранной даты (YYYY-MM-DD)
+    client_time: datetime = Depends(get_client_time),
+    header_client_time: str = Header(None, alias="X-Client-Time")
 ):
     try:
         selected_date = None
         if date:
             try:
-                from datetime import datetime
-                selected_date = datetime.strptime(date, "%Y-%m-%d")
+                from datetime import datetime, timezone, timedelta
+                # Парсим дату как локальное время клиента (начало дня)
+                # Клиент выбирает дату в своем локальном времени (например, 9 ноября)
+                # Нужно конвертировать начало и конец этого дня в UTC для фильтрации
+                local_date = datetime.strptime(date, "%Y-%m-%d")
+                
+                # Определяем timezone клиента из заголовка
+                client_tz = None
+                if header_client_time:
+                    try:
+                        client_time_with_tz = datetime.fromisoformat(header_client_time.replace('Z', '+00:00'))
+                        if client_time_with_tz.tzinfo:
+                            client_tz = client_time_with_tz.tzinfo
+                    except (ValueError, AttributeError):
+                        pass
+                
+                # Если удалось определить timezone клиента, используем его
+                if client_tz:
+                    # Создаем начало дня в локальном времени клиента
+                    local_day_start = local_date.replace(tzinfo=client_tz)
+                    # Конвертируем в UTC
+                    selected_date = local_day_start.astimezone(timezone.utc).replace(tzinfo=None)
+                else:
+                    # Если timezone не определен, считаем что дата уже в UTC
+                    selected_date = local_date.replace(tzinfo=timezone.utc)
             except ValueError:
                 pass  # Игнорируем неверный формат даты
         
-        return crud.list_tasks_with_subtasks(db, user_id=user_id, selected_date=selected_date)
+        return crud.list_tasks_with_subtasks(db, user_id=user_id, selected_date=selected_date, current_time=client_time)
     except Exception as e:
         logger.error(f"Error in list_tasks: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
@@ -348,24 +413,6 @@ def complete_task(task_id: int, db: Session = Depends(get_db), user_id: int = De
         return task
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.post("/subtask/{subtask_id}/complete")
-def complete_subtask(subtask_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    # Получаем текущее состояние подзадачи через временный запрос
-    from sqlalchemy import select
-    from . import models
-    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
-    if not subtask:
-        raise HTTPException(status_code=404, detail="Subtask not found")
-    # Проверяем, что подзадача принадлежит пользователю
-    parent_task = crud.get_task(db, task_id=subtask.task_id, user_id=user_id)
-    if not parent_task:
-        raise HTTPException(status_code=404, detail="Subtask not found")
-    # Переключаем состояние (toggle)
-    new_completed_state = not subtask.completed
-    subtask = crud.set_subtask_completed(db, subtask_id=subtask_id, user_id=user_id, completed=new_completed_state)
-    return subtask
 
 
 @app.put("/subtask/{subtask_id}")

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import select, func, update
 from . import models
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 import logging
 
 logger = logging.getLogger(__name__)
 
-
+#Базовые функции для задач
 def create_task(db: Session, user_id: int, title: str, description=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
     # Преобразуем пустую строку в None для description
     if description is not None and description.strip() == '':
@@ -60,27 +60,6 @@ def update_task(db: Session, task_id: int, user_id: int, title: str, description
     return task
 
 
-def create_subtask(db: Session, task_id: int, title: str) -> models.Subtask:
-    subtask = models.Subtask(task_id=task_id, title=title)
-    db.add(subtask)
-    db.commit()
-    db.refresh(subtask)
-    return subtask
-
-
-def delete_subtask(db: Session, subtask_id: int, user_id: int) -> bool:
-    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
-    if not subtask:
-        return False
-    # Ensure subtask belongs to user's task
-    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
-    if not parent_task:
-        return False
-    db.delete(subtask)
-    db.commit()
-    return True
-
-
 def delete_task(db: Session, task_id: int, user_id: int, current_time: datetime = None) -> bool:
     """
     Мягкое удаление задачи - помечает как удаленную, но не удаляет из БД.
@@ -91,13 +70,75 @@ def delete_task(db: Session, task_id: int, user_id: int, current_time: datetime 
         return False
     
     # Используем время клиента, если передано
-    now = current_time if current_time else datetime.now()
+    now = current_time if current_time else datetime.now(timezone.utc)
     task.deleted = True
     task.deleted_at = now
     db.commit()
     return True
 
 
+
+
+
+
+#Работа с подзадачами
+def create_subtask(db: Session, task_id: int, user_id: int, title: str) -> models.Subtask:
+    parent_task = get_task(db, task_id=task_id, user_id=user_id)
+    if not parent_task:
+        return None
+
+    subtask = models.Subtask(task_id=task_id, title=title)
+    db.add(subtask)
+    db.commit()
+    db.refresh(subtask)
+    return subtask
+
+
+def set_subtask_completed(db: Session, subtask_id: int, user_id: int, completed: bool):
+    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
+    if not subtask:
+        return None
+    # Проверка, что подзадача принадлежит задаче пользователя
+    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
+    if not parent_task:
+        return None
+    subtask.completed = completed
+    db.commit()
+    db.refresh(subtask)
+    return subtask
+
+
+def update_subtask(db: Session, subtask_id: int, user_id: int, title: str):
+    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
+    if not subtask:
+        return None
+    # Проверка, что подзадача принадлежит задаче пользователя
+    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
+    if not parent_task:
+        return None
+    subtask.title = title
+    db.commit()
+    db.refresh(subtask)
+    return subtask
+
+
+def delete_subtask(db: Session, subtask_id: int, user_id: int) -> bool:
+    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
+    if not subtask:
+        return False
+    # Проверка, что подзадача принадлежит задаче пользователя
+    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
+    if not parent_task:
+        return False
+    db.delete(subtask)
+    db.commit()
+    return True
+
+
+
+
+
+#Получение списка задач с подзадачами
 def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime = None, current_time: datetime = None):
     """
     Получает список задач с подзадачами для выбранной даты.
@@ -107,19 +148,23 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         selected_date: Дата для фильтрации задач (если None - используется текущая дата)
         current_time: Текущее время клиента (если None - используется время сервера)
     """
-    now = current_time if current_time else datetime.now()
+    now = current_time if current_time else datetime.now(timezone.utc)
     if selected_date is None:
         selected_date = now
     
-    # Подготавливаем нормализованные даты один раз (локальное время)
+    # Подготавливаем нормализованные даты в UTC для сравнения
+    # Конвертируем в UTC если нужно
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    selected_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0) if selected_date else None
     
-    # Убираем timezone для сравнения (используем локальное время)
-    if selected_day and selected_day.tzinfo:
-        selected_day = selected_day.replace(tzinfo=None)
-    if today.tzinfo:
-        today = today.replace(tzinfo=None)
+    if selected_date:
+        if selected_date.tzinfo is None:
+            selected_date = selected_date.replace(tzinfo=timezone.utc)
+        selected_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        selected_day = None
+    
     
     # Получаем задачи для выбранной даты
     # Фильтруем по created_at = selected_day (для ежедневных задач)
@@ -132,17 +177,20 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     if not is_past_date:
         stmt = stmt.where(models.Task.deleted == False)
     
-    stmt = stmt.options(joinedload(models.Task.subtasks)).order_by(models.Task.created_at.desc())
-    result = db.execute(stmt)
-    tasks = result.unique().scalars().all()
+    stmt = stmt.options(selectinload(models.Task.subtasks)).order_by(models.Task.created_at.desc())
+    tasks = db.scalars(stmt).all()
     
     # Фильтруем задачи по выбранной дате
     filtered_tasks = []
     for task in tasks:
-        task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
-        # Убираем timezone для сравнения (используем локальное время)
-        if task_created_day and task_created_day.tzinfo:
-            task_created_day = task_created_day.replace(tzinfo=None)
+        # task.created_at уже в UTC (timezone-aware), нормализуем для сравнения
+        if task.created_at:
+            task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Если created_at имеет timezone, конвертируем в UTC для сравнения
+            if task_created_day.tzinfo:
+                task_created_day = task_created_day.astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            task_created_day = None
         
         # Удаленные задачи показываем только для прошлых дат
         if task.deleted:
@@ -155,8 +203,10 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         should_show = False
         
         if frequency == 'daily':
-            # Ежедневные задачи - показываем задачи, созданные в выбранный день
-            if task_created_day and task_created_day == selected_day:
+            # Ежедневные задачи - показываем задачи, созданные в выбранный день (в UTC)
+            # selected_day уже в UTC (начало дня после конвертации из локального времени клиента)
+            # task_created_day тоже в UTC (после нормализации)
+            if task_created_day and selected_day and task_created_day == selected_day:
                 should_show = True
         
         elif frequency == 'weekly':
@@ -187,20 +237,32 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     return filtered_tasks
 
 
+
+
+
+#Выполнение задач и логика повторения/стриков
 def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool, current_time: datetime = None):
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return None
     
     # Используем время клиента, если передано
-    now = current_time if current_time else datetime.now()
+    now = current_time if current_time else datetime.now(timezone.utc)
     # Проверяем, не является ли дата создания задачи прошлой датой
+    # Конвертируем в UTC для сравнения
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = today - timedelta(days=1)
-    task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0) if task.created_at else None
-    # Убираем timezone для сравнения (используем локальное время)
-    if task_created_day and task_created_day.tzinfo:
-        task_created_day = task_created_day.replace(tzinfo=None)
+    
+    # task.created_at уже в UTC (timezone-aware), нормализуем для сравнения
+    if task.created_at:
+        task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Если created_at имеет timezone, конвертируем в UTC для сравнения
+        if task_created_day.tzinfo:
+            task_created_day = task_created_day.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        task_created_day = None
     
     if task_created_day and task_created_day < yesterday:
         # Нельзя изменять статус задач для прошлых дат (позавчера и раньше)
@@ -256,9 +318,9 @@ def calculate_streak_on_complete(task: models.Task, completion_date: datetime = 
     Если задача была выполнена в предыдущем периоде - стрик продолжается, иначе сбрасывается или начинается с 1.
     """
     if completion_date is None:
-        completion_date = datetime.now()
+        completion_date = datetime.now(timezone.utc)
     
-    # Убираем timezone (используем локальное время)
+    # Используем UTC для вычислений
     if completion_date.tzinfo:
         completion_date = completion_date.replace(tzinfo=None)
     
@@ -343,9 +405,9 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
         return 0
     
     if now is None:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
     
-    # Убираем timezone (используем локальное время)
+    # Используем UTC для вычислений
     if now.tzinfo:
         now = now.replace(tzinfo=None)
     if task.last_completed_date:
@@ -400,34 +462,11 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
     return task.streak
 
 
-def set_subtask_completed(db: Session, subtask_id: int, user_id: int, completed: bool):
-    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
-    if not subtask:
-        return None
-    # Ensure subtask belongs to user's task
-    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
-    if not parent_task:
-        return None
-    subtask.completed = completed
-    db.commit()
-    db.refresh(subtask)
-    return subtask
 
 
-def update_subtask(db: Session, subtask_id: int, user_id: int, title: str):
-    subtask = db.execute(select(models.Subtask).where(models.Subtask.id == subtask_id)).scalar_one_or_none()
-    if not subtask:
-        return None
-    # Ensure subtask belongs to user's task
-    parent_task = get_task(db, task_id=subtask.task_id, user_id=user_id)
-    if not parent_task:
-        return None
-    subtask.title = title
-    db.commit()
-    db.refresh(subtask)
-    return subtask
 
 
+#Статистика 
 def get_stats(db: Session, user_id: int, period: str):
     """
     Получает статистику по задачам для указанного периода.
@@ -440,7 +479,7 @@ def get_stats(db: Session, user_id: int, period: str):
     - "month" - текущий месяц
     - "all" - все время
     """
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     
     # Определяем период фильтрации
@@ -543,6 +582,11 @@ def get_stats(db: Session, user_id: int, period: str):
     }
 
 
+
+
+
+
+#Работа с заметками
 def create_note(db: Session, user_id: int, content: str, date: str, mood: str = None):
     note = models.Note(
         user_id=user_id,
@@ -575,6 +619,11 @@ def delete_note(db: Session, note_id: int, user_id: int) -> bool:
     return True
 
 
+
+
+
+
+#Автоматическая генерация задач на следующий день
 def generate_daily_tasks(db: Session, target_date: datetime = None):
     """
     Генерирует задачи для нового дня.
@@ -589,9 +638,12 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
         target_date: Дата, для которой нужно создать задачи (по умолчанию - сегодня)
     """
     if target_date is None:
-        target_date = datetime.now()
+        target_date = datetime.now(timezone.utc)
     
-    # Нормализуем даты
+    # Нормализуем даты и конвертируем в UTC
+    if target_date.tzinfo is None:
+        # Если передан naive datetime, считаем его UTC
+        target_date = target_date.replace(tzinfo=timezone.utc)
     target_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     prev_date = target_date - timedelta(days=1)
     
@@ -675,7 +727,7 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
             if source_task.completed:
                 # Задача была выполнена 9 ноября, увеличиваем стрик для задачи 10 ноября
                 new_streak = source_task.streak + 1
-                logger.debug(f"    Task '{source_task.title}' was completed, new streak: {new_streak}")
+
             else:
                 logger.debug(f"    Task '{source_task.title}' was not completed, streak reset to 0")
             
@@ -693,6 +745,10 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
                 streak=new_streak,  # Устанавливаем стрик на основе предыдущей задачи
                 deleted=False
             )
+            # Устанавливаем created_at в UTC (timezone-aware) для сохранения в БД
+            # target_date уже в UTC, но нужно убедиться что он timezone-aware
+            if target_date.tzinfo is None:
+                target_date = target_date.replace(tzinfo=timezone.utc)
             new_task.created_at = target_date
             db.add(new_task)
             # Делаем flush, чтобы задача получила ID перед созданием подзадач
@@ -707,6 +763,7 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
                     title=subtask.title,
                     completed=False
                 )
+                # Устанавливаем created_at в UTC (timezone-aware)
                 new_subtask.created_at = target_date
                 db.add(new_subtask)
                 subtasks_count += 1
