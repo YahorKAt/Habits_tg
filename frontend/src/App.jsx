@@ -309,6 +309,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [loading, setLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const ribbonRef = useRef(null)
+  const hasScrolledRef = useRef(false) // Флаг для отслеживания первой прокрутки
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
 
 
@@ -386,9 +387,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     return days
   }, [])
 
-  // Центрируем текущий день при загрузке
+  // Центрируем текущий день только при первой загрузке
   useEffect(() => {
-    if (ribbonRef.current && daysAround.length > 0) {
+    if (ribbonRef.current && daysAround.length > 0 && !hasScrolledRef.current) {
       // Небольшая задержка для того, чтобы DOM успел отрендериться
       const timeoutId = setTimeout(() => {
         const today = new Date()
@@ -403,6 +404,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               block: 'nearest',
               inline: 'center'
             })
+            hasScrolledRef.current = true // Помечаем, что прокрутка уже выполнена
           }
         }
       }, 100)
