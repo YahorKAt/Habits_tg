@@ -5,7 +5,7 @@ import { ru } from 'date-fns/locale'
 
 // Импорты утилит и хуков
 import { createApiClient } from './utils/api.js'
-import { useInitData } from './hooks/useTelegram.js'
+import { useInitData, useTelegram } from './hooks/useTelegram.js'
 import { TASK_CATEGORIES, FREQUENCY_OPTIONS, MOOD_OPTIONS } from './constants/index.js'
 import { formatDateForAPI, isPastDate, getDaysAround } from './utils/dateUtils.js'
 
