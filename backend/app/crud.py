@@ -184,15 +184,24 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     # Или по неделе/месяцу для еженедельных/месячных задач
     # Определяем, является ли выбранная дата прошлой (строго меньше сегодня)
     # Если выбран сегодня или будущее - удаленные задачи не показываем
-    is_past_date = selected_day < today if (selected_day and today) else False
+    # Сравниваем даты (без времени) для корректного определения
+    if selected_day and today:
+        # Сравниваем даты напрямую
+        is_past_date = selected_day.date() < today.date() if hasattr(selected_day, 'date') else selected_day < today
+    else:
+        is_past_date = False
+    
+    # Логирование для отладки
+    logger.debug(f"Filtering tasks: selected_day={selected_day}, today={today}, is_past_date={is_past_date}")
     
     stmt = select(models.Task).where(models.Task.user_id == user_id)
     
-    # Если выбран прошлый день - показываем все задачи (включая удаленные)
-    # Если выбран сегодня или будущее - показываем только не удаленные
-    # Удаленные задачи не должны отображаться для текущего дня
+    # ВСЕГДА исключаем удаленные задачи для сегодняшнего дня и будущих дней
+    # Удаленные задачи показываем ТОЛЬКО для прошлых дат (is_past_date = True)
     if not is_past_date:
+        # Для сегодняшнего дня и будущих дней - удаленные задачи НЕ показываем
         stmt = stmt.where(models.Task.deleted == False)
+        logger.debug("Applied filter: deleted == False (not past date)")
     
     stmt = stmt.options(selectinload(models.Task.subtasks)).order_by(models.Task.created_at.desc())
     tasks = db.scalars(stmt).all()
@@ -209,11 +218,11 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         else:
             task_created_day = None
         
-        # Удаленные задачи показываем только для прошлых дат
-        # Для сегодняшнего дня удаленные задачи не должны отображаться
-        if task.deleted:
-            if not is_past_date:
-                continue
+        # Дополнительная проверка: удаленные задачи показываем ТОЛЬКО для прошлых дат
+        # Для сегодняшнего дня удаленные задачи НЕ должны отображаться
+        if task.deleted and not is_past_date:
+            logger.debug(f"Skipping deleted task {task.id} (not past date)")
+            continue
         
         frequency = task.frequency
         
