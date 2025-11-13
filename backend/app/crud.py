@@ -153,17 +153,30 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         selected_date = now
     
     # Подготавливаем нормализованные даты в UTC для сравнения
-    # Конвертируем в UTC если нужно
+    # Конвертируем в UTC если нужно и делаем naive для сравнения
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    now_utc = now.astimezone(timezone.utc) if now.tzinfo else now
+    today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
     
     if selected_date:
+        # Нормализуем selected_date: конвертируем в UTC и делаем naive для сравнения
         if selected_date.tzinfo is None:
+            # Если naive, считаем что это уже UTC
             selected_date = selected_date.replace(tzinfo=timezone.utc)
-        selected_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Конвертируем в UTC и делаем naive
+        selected_date_utc = selected_date.astimezone(timezone.utc) if selected_date.tzinfo else selected_date
+        selected_day = selected_date_utc.replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+        # Создаем диапазон для выбранного дня в UTC
+        # Выбранный день в локальном времени клиента может охватывать 2 дня в UTC
+        # Например, 13 ноября 00:00 +03:00 = 12 ноября 21:00 UTC
+        # Поэтому используем диапазон от начала предыдущего дня до конца следующего дня
+        selected_day_start = selected_day - timedelta(days=1)
+        selected_day_end = selected_day + timedelta(days=2)
     else:
         selected_day = None
+        selected_day_start = None
+        selected_day_end = None
     
     
     # Получаем задачи для выбранной даты
@@ -203,11 +216,13 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         should_show = False
         
         if frequency == 'daily':
-            # Ежедневные задачи - показываем задачи, созданные в выбранный день (в UTC)
-            # selected_day уже в UTC (начало дня после конвертации из локального времени клиента)
-            # task_created_day тоже в UTC (после нормализации)
-            if task_created_day and selected_day and task_created_day == selected_day:
-                should_show = True
+            # Ежедневные задачи - показываем задачи, созданные в выбранный день
+            # Используем диапазон дат, так как выбранный день в локальном времени клиента
+            # может охватывать 2 дня в UTC (из-за timezone offset)
+            if task_created_day and selected_day_start and selected_day_end:
+                # Проверяем, попадает ли дата создания задачи в диапазон выбранного дня
+                if selected_day_start <= task_created_day < selected_day_end:
+                    should_show = True
         
         elif frequency == 'weekly':
             # Еженедельные задачи - показываем задачи, созданные в выбранную неделю
