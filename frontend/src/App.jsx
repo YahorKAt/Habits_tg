@@ -1571,41 +1571,6 @@ function JournalPage() {
             </>
           )}
         </div >
-
-        {/* Редактирование заметки */}
-        {
-          editingNote && (
-            <div className="card">
-              <h3 className="text-lg font-semibold mb-4">Редактировать заметку</h3>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <select
-                    value={editMood}
-                    onChange={(e) => setEditMood(e.target.value)}
-                    className="bg-gray-100 rounded-lg px-3 py-2 text-sm border-none outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="" disabled>Выберите настроение</option>
-                    {moodOptions.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                  <span className="inline-flex"><MoodIcon value={editMood || 'neutral'} /></span>
-                </div>
-                <textarea
-                  value={editContent}
-                  onChange={e => setEditContent(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                  placeholder="Измените заметку..."
-                  rows={4}
-                />
-                <div className="flex gap-3">
-                  <button onClick={saveEdit} disabled={!editMood} className="btn flex-1 disabled:opacity-50">Сохранить</button>
-                  <button onClick={cancelEdit} className="btn-secondary flex-1">Отмена</button>
-                </div>
-              </div>
-            </div>
-          )
-        }
       </div >
     </div >
   )
