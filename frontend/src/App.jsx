@@ -386,40 +386,48 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     return days
   }, [])
 
-  // Восстанавливаем позицию скролла или прокручиваем к текущей дате только при первой загрузке
+  // Восстанавливаем позицию скролла или устанавливаем в конец (на текущую дату) без анимации
   useEffect(() => {
     if (ribbonRef.current && daysAround.length > 0) {
-      // Небольшая задержка для того, чтобы DOM успел отрендериться
-      const timeoutId = setTimeout(() => {
-        if (!ribbonRef.current) return
+      // Используем requestAnimationFrame для установки позиции сразу после рендера, без видимой прокрутки
+      const rafId = requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!ribbonRef.current) return
 
-        // Пытаемся восстановить сохраненную позицию скролла
-        const savedScrollPosition = localStorage.getItem('calendarScrollPosition')
-        if (savedScrollPosition !== null) {
-          ribbonRef.current.scrollLeft = parseInt(savedScrollPosition, 10)
-        } else {
-          // Если сохраненной позиции нет, прокручиваем к текущей дате только при первой загрузке
-          const hasScrolledBefore = localStorage.getItem('calendarHasScrolled')
-          if (!hasScrolledBefore) {
-            const today = new Date()
-            const todayIndex = daysAround.findIndex(d => isSameDay(d, today))
+          // Пытаемся восстановить сохраненную позицию скролла
+          const savedScrollPosition = localStorage.getItem('calendarScrollPosition')
+          if (savedScrollPosition !== null) {
+            ribbonRef.current.scrollLeft = parseInt(savedScrollPosition, 10)
+          } else {
+            // Если сохраненной позиции нет, устанавливаем скролл в конец (на текущую дату) без анимации
+            const hasScrolledBefore = localStorage.getItem('calendarHasScrolled')
+            if (!hasScrolledBefore) {
+              const today = new Date()
+              const todayIndex = daysAround.findIndex(d => isSameDay(d, today))
 
-            if (todayIndex !== -1 && ribbonRef.current) {
-              const todayButton = ribbonRef.current.children[todayIndex]
-              if (todayButton) {
-                todayButton.scrollIntoView({
-                  behavior: 'auto',
-                  block: 'nearest',
-                  inline: 'center'
-                })
-                localStorage.setItem('calendarHasScrolled', 'true')
+              if (todayIndex !== -1 && ribbonRef.current) {
+                const todayButton = ribbonRef.current.children[todayIndex]
+                if (todayButton) {
+                  // Вычисляем позицию для центрирования текущей даты
+                  const container = ribbonRef.current
+                  const buttonLeft = todayButton.offsetLeft
+                  const buttonWidth = todayButton.offsetWidth
+                  const containerWidth = container.offsetWidth
+
+                  // Устанавливаем scrollLeft сразу, без анимации
+                  container.scrollLeft = buttonLeft - (containerWidth / 2) + (buttonWidth / 2)
+
+                  // Сохраняем позицию
+                  localStorage.setItem('calendarScrollPosition', container.scrollLeft.toString())
+                  localStorage.setItem('calendarHasScrolled', 'true')
+                }
               }
             }
           }
-        }
-      }, 100)
+        })
+      })
 
-      return () => clearTimeout(timeoutId)
+      return () => cancelAnimationFrame(rafId)
     }
   }, [daysAround])
 
@@ -657,7 +665,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
             </div>
           </div>
-          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1 scroll-smooth">
+          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1">
             {daysAround.map((d) => {
               const isSel = isSameDay(d, selectedDate)
               const isTod = isSameDay(d, new Date())
