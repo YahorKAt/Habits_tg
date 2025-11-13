@@ -7,7 +7,7 @@ import { ru } from 'date-fns/locale'
 import { createApiClient } from './utils/api.js'
 import { useInitData, useTelegram } from './hooks/useTelegram.js'
 import { TASK_CATEGORIES, FREQUENCY_OPTIONS, MOOD_OPTIONS } from './constants/index.js'
-import { formatDateForAPI, isPastDate, getDaysAround } from './utils/dateUtils.js'
+import { formatDateForAPI, getDaysAround } from './utils/dateUtils.js'
 
 // Компонент для создания новой задачи
 function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
