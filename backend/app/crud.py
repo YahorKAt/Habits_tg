@@ -247,29 +247,28 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool,
     if not task:
         return None
     
-    # Используем время клиента, если передано
-    now = current_time if current_time else datetime.now(timezone.utc)
-    # Проверяем, не является ли дата создания задачи прошлой датой
-    # Конвертируем в UTC для сравнения
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Используем утилиты для нормализации дат в UTC
+    today = get_today_utc(current_time)
     yesterday = today - timedelta(days=1)
     
-    # task.created_at уже в UTC (timezone-aware), нормализуем для сравнения
-    if task.created_at:
-        task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0)
-        # Если created_at имеет timezone, конвертируем в UTC для сравнения
-        if task_created_day.tzinfo:
-            task_created_day = task_created_day.astimezone(timezone.utc).replace(tzinfo=None)
-    else:
-        task_created_day = None
+    # Нормализуем дату создания задачи в UTC для сравнения
+    task_created_day = normalize_date_to_utc_day(task.created_at)
     
     if task_created_day and task_created_day < yesterday:
         # Нельзя изменять статус задач для прошлых дат (позавчера и раньше)
         raise ValueError("Cannot modify task status for past dates")
     
-    completion_date = now
+    # Нормализуем completion_date в UTC (timezone-aware для сохранения в БД)
+    if current_time:
+        # current_time уже должен быть в UTC (naive), но проверяем
+        if current_time.tzinfo is None:
+            # Если naive, считаем что это уже UTC и делаем timezone-aware
+            completion_date = current_time.replace(tzinfo=timezone.utc)
+        else:
+            # Если timezone-aware, конвертируем в UTC
+            completion_date = current_time.astimezone(timezone.utc)
+    else:
+        completion_date = datetime.now(timezone.utc)
     
     if completed:
         task.last_completed_date = completion_date
