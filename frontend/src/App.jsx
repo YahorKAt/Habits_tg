@@ -4,10 +4,10 @@ import { format, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval
 import { ru } from 'date-fns/locale'
 
 // Импорты утилит и хуков
-import { createApiClient } from './utils/api'
-import { useInitData } from './hooks/useTelegram'
-import { TASK_CATEGORIES, FREQUENCY_OPTIONS, MOOD_OPTIONS } from './constants'
-import { formatDateForAPI, isPastDate, getDaysAround } from './utils/dateUtils'
+import { createApiClient } from './utils/api.js'
+import { useInitData } from './hooks/useTelegram.js'
+import { TASK_CATEGORIES, FREQUENCY_OPTIONS, MOOD_OPTIONS } from './constants/index.js'
+import { formatDateForAPI, isPastDate, getDaysAround } from './utils/dateUtils.js'
 
 // Компонент для создания новой задачи
 function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
