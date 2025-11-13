@@ -608,6 +608,38 @@ def get_notes_by_date(db: Session, user_id: int, date: str):
     ).scalars().all()
 
 
+def get_notes_by_month(db: Session, user_id: int, year: int, month: int):
+    """
+    Получает все заметки за указанный месяц.
+    Возвращает словарь {date: note} для быстрого доступа.
+    """
+    from datetime import date as date_class
+    # Создаем диапазон дат для месяца
+    start_date = date_class(year, month, 1)
+    if month == 12:
+        end_date = date_class(year + 1, 1, 1)
+    else:
+        end_date = date_class(year, month + 1, 1)
+    
+    notes = db.execute(
+        select(models.Note)
+        .where(
+            models.Note.user_id == user_id,
+            models.Note.date >= start_date.strftime('%Y-%m-%d'),
+            models.Note.date < end_date.strftime('%Y-%m-%d')
+        )
+        .order_by(models.Note.date.desc(), models.Note.created_at.desc())
+    ).scalars().all()
+    
+    # Группируем по датам, берем первую (самую новую) заметку для каждой даты
+    notes_by_date = {}
+    for note in notes:
+        if note.date not in notes_by_date:
+            notes_by_date[note.date] = note
+    
+    return notes_by_date
+
+
 def delete_note(db: Session, note_id: int, user_id: int) -> bool:
     note = db.execute(
         select(models.Note).where(models.Note.id == note_id, models.Note.user_id == user_id)

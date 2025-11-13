@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
-import { format, isSameDay, isToday } from 'date-fns'
+import { format, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
 // Импорты утилит и хуков
@@ -1134,21 +1134,34 @@ function JournalPage() {
   }
 
   const loadMonthMood = async (date) => {
-    const start = startOfMonth(date)
-    const end = endOfMonth(date)
-    const days = eachDayOfInterval({ start, end })
-    const map = {}
-    for (const d of days) {
-      const dateStr = format(d, 'yyyy-MM-dd')
-      try {
-        const data = await api(`/notes?date=${dateStr}`)
-        if (Array.isArray(data) && data.length > 0) {
-          const first = data[0]
-          if (first?.mood) map[dateStr] = moodToClasses(first.mood)
-        }
-      } catch (e) { /* ignore per-day errors */ }
+    try {
+      // Загружаем все заметки за месяц одним запросом
+      const year = date.getFullYear()
+      const month = date.getMonth() + 1 // getMonth() возвращает 0-11
+      const data = await api(`/notes?year=${year}&month=${month}`)
+
+      const map = {}
+      if (Array.isArray(data)) {
+        // Группируем по датам, берем первую заметку для каждой даты
+        const notesByDate = {}
+        data.forEach(note => {
+          if (note.date && !notesByDate[note.date]) {
+            notesByDate[note.date] = note
+          }
+        })
+
+        // Создаем карту настроений
+        Object.entries(notesByDate).forEach(([dateStr, note]) => {
+          if (note?.mood) {
+            map[dateStr] = moodToClasses(note.mood)
+          }
+        })
+      }
+      setMonthMoodMap(map)
+    } catch (e) {
+      console.error('Error loading month mood:', e)
+      // В случае ошибки просто не обновляем карту
     }
-    setMonthMoodMap(map)
   }
 
   const createNote = async () => {

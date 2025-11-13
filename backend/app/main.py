@@ -449,8 +449,24 @@ def add_note(payload: NoteCreate, db: Session = Depends(get_db), user_id: int = 
 
 
 @app.get("/notes")
-def list_notes(date: str, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
-    return crud.get_notes_by_date(db, user_id=user_id, date=date)
+def list_notes(
+    date: str = None, 
+    year: int = None, 
+    month: int = None,
+    db: Session = Depends(get_db), 
+    user_id: int = Depends(get_user_id)
+):
+    # Если указан год и месяц - возвращаем все заметки за месяц
+    if year is not None and month is not None:
+        notes_dict = crud.get_notes_by_month(db, user_id=user_id, year=year, month=month)
+        # Преобразуем словарь в список для совместимости
+        return list(notes_dict.values())
+    
+    # Иначе возвращаем заметки за конкретную дату
+    if date:
+        return crud.get_notes_by_date(db, user_id=user_id, date=date)
+    
+    return []
 
 
 @app.delete("/notes/{note_id}")
