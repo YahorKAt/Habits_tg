@@ -153,16 +153,16 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         selected_date: Дата для фильтрации задач (если None - используется текущая дата)
         current_time: Текущее время клиента (если None - используется время сервера)
     """
-    # ВСЕГДА используем UTC для всех вычислений и сравнений
+    # ВСЕГДА используем UTC для всех вычислений и сравнений (timezone-aware)
     today = get_today_utc(current_time)
     
     if selected_date is None:
         selected_date = normalize_to_utc(current_time) or datetime.now(timezone.utc)
     
-    # Нормализуем выбранную дату в UTC
+    # Нормализуем выбранную дату в UTC (timezone-aware)
     selected_day = normalize_date_to_utc_day(selected_date)
     
-    # Создаем диапазон для выбранного дня в UTC
+    # Создаем диапазон для выбранного дня в UTC (timezone-aware)
     # Выбранный день в локальном времени клиента может охватывать 2 дня в UTC
     # Поэтому используем диапазон от начала предыдущего дня до конца следующего дня
     if selected_day:
@@ -172,7 +172,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         selected_day_start = None
         selected_day_end = None
     
-    # Определяем, является ли выбранная дата прошлой
+    # Определяем, является ли выбранная дата прошлой (сравнение aware datetime)
     is_past_date = check_is_past_date(selected_day, today)
     
     # Логирование для отладки
@@ -188,13 +188,8 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     filtered_tasks = []
     for task in tasks:
         # task.created_at уже в UTC (timezone-aware), нормализуем для сравнения
-        if task.created_at:
-            task_created_day = task.created_at.replace(hour=0, minute=0, second=0, microsecond=0)
-            # Если created_at имеет timezone, конвертируем в UTC для сравнения
-            if task_created_day.tzinfo:
-                task_created_day = task_created_day.astimezone(timezone.utc).replace(tzinfo=None)
-        else:
-            task_created_day = None
+        # Используем aware datetime для всех сравнений
+        task_created_day = normalize_date_to_utc_day(task.created_at)
         
         frequency = task.frequency
         
@@ -247,26 +242,22 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool,
     if not task:
         return None
     
-    # Используем утилиты для нормализации дат в UTC
+    # Используем утилиты для нормализации дат в UTC (timezone-aware)
     today = get_today_utc(current_time)
     yesterday = today - timedelta(days=1)
     
-    # Нормализуем дату создания задачи в UTC для сравнения
+    # Нормализуем дату создания задачи в UTC для сравнения (timezone-aware)
     task_created_day = normalize_date_to_utc_day(task.created_at)
     
-    if task_created_day and task_created_day < yesterday:
-        # Нельзя изменять статус задач для прошлых дат (позавчера и раньше)
-        raise ValueError("Cannot modify task status for past dates")
+    # Сравниваем timezone-aware datetime
+    if task_created_day is not None and yesterday is not None:
+        if task_created_day < yesterday:
+            # Нельзя изменять статус задач для прошлых дат (позавчера и раньше)
+            raise ValueError("Cannot modify task status for past dates")
     
     # Нормализуем completion_date в UTC (timezone-aware для сохранения в БД)
     if current_time:
-        # current_time уже должен быть в UTC (naive), но проверяем
-        if current_time.tzinfo is None:
-            # Если naive, считаем что это уже UTC и делаем timezone-aware
-            completion_date = current_time.replace(tzinfo=timezone.utc)
-        else:
-            # Если timezone-aware, конвертируем в UTC
-            completion_date = current_time.astimezone(timezone.utc)
+        completion_date = normalize_to_utc(current_time) or datetime.now(timezone.utc)
     else:
         completion_date = datetime.now(timezone.utc)
     
@@ -293,12 +284,20 @@ def set_task_completed(db: Session, task_id: int, user_id: int, completed: bool,
 
 
 def calculate_next_due_date(task: models.Task) -> Optional[datetime]:
-    """Вычисляет следующую дату выполнения для повторяющейся задачи на основе frequency"""
+    """
+    Вычисляет следующую дату выполнения для повторяющейся задачи на основе frequency.
+    Возвращает timezone-aware datetime в UTC.
+    """
     if not task.frequency:
         return None
     
     base_date = task.last_completed_date or task.created_at
     if not base_date:
+        return None
+    
+    # Нормализуем base_date в UTC (timezone-aware)
+    base_date = normalize_to_utc(base_date)
+    if base_date is None:
         return None
     
     if task.frequency == 'daily':
@@ -316,13 +315,14 @@ def calculate_streak_on_complete(task: models.Task, completion_date: datetime = 
     """
     Вычисляет новый стрик при выполнении задачи.
     Если задача была выполнена в предыдущем периоде - стрик продолжается, иначе сбрасывается или начинается с 1.
+    Работает с timezone-aware datetime в UTC.
     """
     if completion_date is None:
         completion_date = datetime.now(timezone.utc)
     
-    # Используем UTC для вычислений
-    if completion_date.tzinfo:
-        completion_date = completion_date.replace(tzinfo=None)
+    # Нормализуем completion_date в UTC (timezone-aware)
+    completion_date = normalize_to_utc(completion_date) or datetime.now(timezone.utc)
+    completion_day = normalize_date_to_utc_day(completion_date)
     
     frequency = task.frequency
     
@@ -334,16 +334,17 @@ def calculate_streak_on_complete(task: models.Task, completion_date: datetime = 
     if not old_last_completed:
         return 1
     
-    last_completed = old_last_completed
-    # Убираем timezone (используем локальное время)
-    if last_completed.tzinfo:
-        last_completed = last_completed.replace(tzinfo=None)
+    # Нормализуем last_completed в UTC (timezone-aware)
+    last_completed = normalize_to_utc(old_last_completed)
+    if last_completed is None:
+        return 1
+    
+    last_day = normalize_date_to_utc_day(last_completed)
+    if last_day is None or completion_day is None:
+        return 1
     
     # Для daily - проверяем последовательность дней
     if frequency == 'daily':
-        last_day = last_completed.replace(hour=0, minute=0, second=0, microsecond=0)
-        completion_day = completion_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        
         # Если выполнение в тот же день - не меняем стрик
         if last_day == completion_day:
             return task.streak
@@ -358,11 +359,8 @@ def calculate_streak_on_complete(task: models.Task, completion_date: datetime = 
     
     # Для weekly - проверяем последовательность недель
     elif frequency == 'weekly':
-        last_week_start = last_completed - timedelta(days=last_completed.weekday())
-        last_week_start = last_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        completion_week_start = completion_date - timedelta(days=completion_date.weekday())
-        completion_week_start = completion_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        last_week_start = last_day - timedelta(days=last_day.weekday())
+        completion_week_start = completion_day - timedelta(days=completion_day.weekday())
         
         # Если выполнение в ту же неделю - не меняем стрик
         if last_week_start == completion_week_start:
@@ -378,8 +376,8 @@ def calculate_streak_on_complete(task: models.Task, completion_date: datetime = 
     
     # Для monthly - проверяем последовательность месяцев
     elif frequency == 'monthly':
-        last_month_start = last_completed.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        completion_month_start = completion_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_start = last_day.replace(day=1)
+        completion_month_start = completion_day.replace(day=1)
         
         # Если выполнение в тот же месяц - не меняем стрик
         if last_month_start == completion_month_start:
@@ -400,31 +398,33 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
     """
     Проверяет и сбрасывает стрик если был пропущен период.
     Вызывается для обновления стрика при проверке задач.
+    Работает с timezone-aware datetime в UTC.
     """
     if not task.last_completed_date:
         return 0
     
+    # Нормализуем now в UTC (timezone-aware)
     if now is None:
         now = datetime.now(timezone.utc)
-    
-    # Используем UTC для вычислений
-    if now.tzinfo:
-        now = now.replace(tzinfo=None)
-    if task.last_completed_date:
-        last_completed = task.last_completed_date
-        # Убираем timezone (используем локальное время)
-        if last_completed.tzinfo:
-            last_completed = last_completed.replace(tzinfo=None)
     else:
+        now = normalize_to_utc(now) or datetime.now(timezone.utc)
+    
+    # Нормализуем last_completed в UTC (timezone-aware)
+    last_completed = normalize_to_utc(task.last_completed_date)
+    if last_completed is None:
         return 0
     
     frequency = task.frequency
     
+    # Нормализуем даты до начала дня (timezone-aware)
+    last_day = normalize_date_to_utc_day(last_completed)
+    today = normalize_date_to_utc_day(now)
+    
+    if last_day is None or today is None:
+        return task.streak
+    
     # Для daily - проверяем пропуск дня
     if frequency == 'daily':
-        last_day = last_completed.replace(hour=0, minute=0, second=0, microsecond=0)
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
         # Если последнее выполнение было больше чем вчера - сбрасываем стрик
         days_diff = (today - last_day).days
         if days_diff > 1:
@@ -434,11 +434,8 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
     
     # Для weekly - проверяем пропуск недели
     elif frequency == 'weekly':
-        last_week_start = last_completed - timedelta(days=last_completed.weekday())
-        last_week_start = last_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        current_week_start = now - timedelta(days=now.weekday())
-        current_week_start = current_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        last_week_start = last_day - timedelta(days=last_day.weekday())
+        current_week_start = today - timedelta(days=today.weekday())
         
         # Если последнее выполнение было больше чем неделю назад - сбрасываем стрик
         weeks_diff = (current_week_start - last_week_start).days // 7
@@ -449,8 +446,8 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
     
     # Для monthly - проверяем пропуск месяца
     elif frequency == 'monthly':
-        last_month_start = last_completed.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_start = last_day.replace(day=1)
+        current_month_start = today.replace(day=1)
         
         # Если последнее выполнение было больше чем месяц назад - сбрасываем стрик
         months_diff = (current_month_start.year - last_month_start.year) * 12 + (current_month_start.month - last_month_start.month)
@@ -479,10 +476,14 @@ def get_stats(db: Session, user_id: int, period: str):
     - "month" - текущий месяц
     - "all" - все время
     """
+    # Используем timezone-aware datetime в UTC
     now = datetime.now(timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today = normalize_date_to_utc_day(now)
     
-    # Определяем период фильтрации
+    if today is None:
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Определяем период фильтрации (timezone-aware)
     since = None
     if period == "day":
         since = today
@@ -537,7 +538,11 @@ def get_stats(db: Session, user_id: int, period: str):
             task_completed, task_last_completed, task_created = task_row
             
             if task_completed and task_last_completed:
-                completed_date = task_last_completed.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Нормализуем дату выполнения в UTC (timezone-aware)
+                completed_date = normalize_date_to_utc_day(task_last_completed)
+                
+                if completed_date is None:
+                    continue
                 
                 # Для периода "day" проверяем, что задача выполнена сегодня
                 if period == "day":
@@ -563,7 +568,8 @@ def get_stats(db: Session, user_id: int, period: str):
                         in_progress += 1
             # Невыполненные задачи
             else:
-                task_created_day = task_created.replace(hour=0, minute=0, second=0, microsecond=0) if task_created else None
+                # Нормализуем дату создания в UTC (timezone-aware)
+                task_created_day = normalize_date_to_utc_day(task_created)
                 
                 if task_created_day and since and task_created_day >= since:
                     # Задача создана в этом периоде и не выполнена - в процессе
@@ -671,11 +677,10 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     if target_date is None:
         target_date = datetime.now(timezone.utc)
     
-    # Нормализуем даты и конвертируем в UTC
-    if target_date.tzinfo is None:
-        # Если передан naive datetime, считаем его UTC
-        target_date = target_date.replace(tzinfo=timezone.utc)
-    target_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Нормализуем даты в UTC (timezone-aware)
+    target_date = normalize_to_utc(target_date) or datetime.now(timezone.utc)
+    target_date = normalize_date_to_utc_day(target_date) or target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
     prev_date = target_date - timedelta(days=1)
     
     # Создаем диапазоны для сравнения с timezone-aware полями в БД
@@ -726,13 +731,11 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
         
         # Для каждой найденной задачи создаем новую задачу
         for source_task in source_tasks:
-            # Проверяем, не истекла ли задача
-            # Убираем timezone для сравнения (используем локальное время)
-            end_date = source_task.end_date
-            if end_date and end_date.tzinfo:
-                end_date = end_date.replace(tzinfo=None)
-            if source_task.end_date and target_date > end_date:
-                continue
+            # Проверяем, не истекла ли задача (сравнение timezone-aware datetime)
+            if source_task.end_date:
+                end_date = normalize_to_utc(source_task.end_date)
+                if end_date and target_date > end_date:
+                    continue
             
             # Проверяем, была ли уже создана задача для этой даты
             existing_task = db.execute(
@@ -776,9 +779,7 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
                 deleted=False
             )
             # Устанавливаем created_at в UTC (timezone-aware) для сохранения в БД
-            # target_date уже в UTC, но нужно убедиться что он timezone-aware
-            if target_date.tzinfo is None:
-                target_date = target_date.replace(tzinfo=timezone.utc)
+            # target_date уже нормализован в UTC (timezone-aware)
             new_task.created_at = target_date
             db.add(new_task)
             # Делаем flush, чтобы задача получила ID перед созданием подзадач
