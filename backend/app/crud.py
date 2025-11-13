@@ -62,17 +62,15 @@ def update_task(db: Session, task_id: int, user_id: int, title: str, description
 
 def delete_task(db: Session, task_id: int, user_id: int, current_time: datetime = None) -> bool:
     """
-    Мягкое удаление задачи - помечает как удаленную, но не удаляет из БД.
-    Удаленная задача остается в архиве и показывается только для прошлых дат.
+    Полное удаление задачи из базы данных безвозвратно.
+    Удаляет задачу и все связанные подзадачи (cascade delete).
     """
     task = get_task(db, task_id=task_id, user_id=user_id)
     if not task:
         return False
     
-    # Используем время клиента, если передано
-    now = current_time if current_time else datetime.now(timezone.utc)
-    task.deleted = True
-    task.deleted_at = now
+    # Удаляем задачу из БД (подзадачи удалятся автоматически благодаря cascade)
+    db.delete(task)
     db.commit()
     return True
 
@@ -148,16 +146,27 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
         selected_date: Дата для фильтрации задач (если None - используется текущая дата)
         current_time: Текущее время клиента (если None - используется время сервера)
     """
-    now = current_time if current_time else datetime.now(timezone.utc)
-    if selected_date is None:
-        selected_date = now
+    # ВСЕГДА используем UTC для всех вычислений и сравнений
+    # current_time уже должен быть в UTC (конвертирован из локального времени клиента в get_client_time)
+    # Но на всякий случай убеждаемся, что работаем с UTC
+    if current_time:
+        # Если current_time передан, он уже должен быть в UTC (naive)
+        # Но проверяем и конвертируем если нужно
+        if current_time.tzinfo is None:
+            # Считаем что это уже UTC (как возвращает get_client_time)
+            now_utc = current_time
+        else:
+            # Если есть timezone, конвертируем в UTC
+            now_utc = current_time.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        # Если current_time не передан, используем UTC сервера
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     
-    # Подготавливаем нормализованные даты в UTC для сравнения
-    # Конвертируем в UTC если нужно и делаем naive для сравнения
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    now_utc = now.astimezone(timezone.utc) if now.tzinfo else now
-    today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).replace(tzinfo=None)
+    # Определяем "сегодня" в UTC (начало дня)
+    today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    if selected_date is None:
+        selected_date = now_utc
     
     if selected_date:
         # Нормализуем selected_date: конвертируем в UTC и делаем naive для сравнения
@@ -183,8 +192,7 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     # Фильтруем по created_at = selected_day (для ежедневных задач)
     # Или по неделе/месяцу для еженедельных/месячных задач
     # Определяем, является ли выбранная дата прошлой (строго меньше сегодня)
-    # Если выбран сегодня или будущее - удаленные задачи не показываем
-    # Сравниваем даты (без времени) для корректного определения
+    # Это используется для логики отображения (например, блокировка редактирования прошлых дат)
     if selected_day and today:
         # Сравниваем даты напрямую
         is_past_date = selected_day.date() < today.date() if hasattr(selected_day, 'date') else selected_day < today
@@ -194,14 +202,8 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     # Логирование для отладки
     logger.debug(f"Filtering tasks: selected_day={selected_day}, today={today}, is_past_date={is_past_date}")
     
+    # Получаем все задачи пользователя (удаленные задачи уже удалены из БД)
     stmt = select(models.Task).where(models.Task.user_id == user_id)
-    
-    # ВСЕГДА исключаем удаленные задачи для сегодняшнего дня и будущих дней
-    # Удаленные задачи показываем ТОЛЬКО для прошлых дат (is_past_date = True)
-    if not is_past_date:
-        # Для сегодняшнего дня и будущих дней - удаленные задачи НЕ показываем
-        stmt = stmt.where(models.Task.deleted == False)
-        logger.debug("Applied filter: deleted == False (not past date)")
     
     stmt = stmt.options(selectinload(models.Task.subtasks)).order_by(models.Task.created_at.desc())
     tasks = db.scalars(stmt).all()
@@ -217,12 +219,6 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
                 task_created_day = task_created_day.astimezone(timezone.utc).replace(tzinfo=None)
         else:
             task_created_day = None
-        
-        # Дополнительная проверка: удаленные задачи показываем ТОЛЬКО для прошлых дат
-        # Для сегодняшнего дня удаленные задачи НЕ должны отображаться
-        if task.deleted and not is_past_date:
-            logger.debug(f"Skipping deleted task {task.id} (not past date)")
-            continue
         
         frequency = task.frequency
         
@@ -525,8 +521,7 @@ def get_stats(db: Session, user_id: int, period: str):
     
     # Базовые условия для запроса
     base_conditions = [
-        models.Task.user_id == user_id,
-        models.Task.deleted == False
+        models.Task.user_id == user_id
     ]
     
     if since is not None:
@@ -703,14 +698,13 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     logger.info(f"📋 Found {len(all_user_ids)} users with tasks")
     
     for user_id in all_user_ids:
-        # Ищем все задачи предыдущего дня (кроме удаленных)
+        # Ищем все задачи предыдущего дня
         # Используем диапазон дат для правильного сравнения с timezone-aware полями
         source_tasks = db.execute(
             select(models.Task)
             .where(
                 models.Task.user_id == user_id,
                 models.Task.frequency == 'daily',
-                models.Task.deleted == False,  # НЕ создаем удаленные задачи
                 models.Task.created_at >= prev_date_start,
                 models.Task.created_at < prev_date_end
             )
