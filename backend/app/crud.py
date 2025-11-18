@@ -17,6 +17,31 @@ from .utils.date_utils import (
 
 logger = logging.getLogger(__name__)
 
+# Функции для работы с пользователями и часовыми поясами
+def update_user_timezone(db: Session, user_id: int, timezone_offset: str):
+    """Обновляет или создает запись о часовом поясе пользователя"""
+    from datetime import timezone as tz
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if user:
+        user.timezone_offset = timezone_offset
+        user.updated_at = datetime.now(tz.utc)
+    else:
+        user = models.User(user_id=user_id, timezone_offset=timezone_offset)
+        db.add(user)
+    
+    db.commit()
+    db.refresh(user)
+    return user
+
+def get_user_timezone(db: Session, user_id: int) -> Optional[str]:
+    """Получает часовой пояс пользователя"""
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    return user.timezone_offset if user else None
+
+def get_all_users_with_timezone(db: Session) -> List[models.User]:
+    """Получает всех пользователей с сохраненным часовым поясом"""
+    return db.query(models.User).filter(models.User.timezone_offset.isnot(None)).all()
+
 #Базовые функции для задач
 def create_task(db: Session, user_id: int, title: str, description=None, repeat_interval=1, next_due_date=None, end_date=None, category='personal', frequency='daily') -> models.Task:
     # Преобразуем пустую строку в None для description
@@ -661,7 +686,7 @@ def delete_note(db: Session, note_id: int, user_id: int) -> bool:
 
 
 #Автоматическая генерация задач на следующий день
-def generate_daily_tasks(db: Session, target_date: datetime = None):
+def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Optional[int] = None):
     """
     Генерирует задачи для нового дня.
     В 00:00 10 ноября создает задачи для 10 ноября на основе задач 9 ноября.
@@ -673,6 +698,7 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     
     Args:
         target_date: Дата, для которой нужно создать задачи (по умолчанию - сегодня)
+        user_id: ID пользователя, для которого создавать задачи (если None - для всех пользователей)
     """
     if target_date is None:
         target_date = datetime.now(timezone.utc)
@@ -694,14 +720,21 @@ def generate_daily_tasks(db: Session, target_date: datetime = None):
     target_date_end = target_date + timedelta(days=1)
     
     logger.info(f"🔄 Generating tasks for {target_date.date()}, looking for tasks from {prev_date.date()}")
+    if user_id:
+        logger.info(f"   For user_id: {user_id}")
     logger.info(f"   Date range: {prev_date_start} <= created_at < {prev_date_end}")
     
     created_count = 0
     
-    # Получаем все пользователи, у которых есть задачи
-    all_user_ids = db.execute(
-        select(models.Task.user_id).distinct()
-    ).scalars().all()
+    # Получаем список пользователей для обработки
+    if user_id:
+        # Обрабатываем только указанного пользователя
+        all_user_ids = [user_id]
+    else:
+        # Получаем все пользователи, у которых есть задачи
+        all_user_ids = db.execute(
+            select(models.Task.user_id).distinct()
+        ).scalars().all()
     
     if not all_user_ids:
         logger.info("⚠️ No users with tasks found")

@@ -1,9 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, Header, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from .database import init_db, get_db
 from .schemas import TaskCreate, SubtaskCreate, SubtaskUpdate, NoteCreate
 from . import crud
@@ -82,16 +83,124 @@ app.add_middleware(
 )
 
 
+class TimezoneMiddleware(BaseHTTPMiddleware):
+    """Middleware для автоматического сохранения часового пояса пользователя"""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        
+        # Сохраняем часовой пояс только для аутентифицированных запросов
+        if "X-Telegram-Init-Data" in request.headers:
+            try:
+                user = parse_and_validate_init_data(request.headers.get("X-Telegram-Init-Data"))
+                if user and "id" in user:
+                    user_id = int(user["id"])
+                    client_time_header = request.headers.get("X-Client-Time")
+                    
+                    if client_time_header:
+                        try:
+                            client_time = datetime.fromisoformat(client_time_header.replace('Z', '+00:00'))
+                            if client_time.tzinfo:
+                                # Извлекаем offset в формате "+03:00"
+                                offset = client_time.strftime("%z")
+                                if offset:
+                                    # Форматируем как "+03:00"
+                                    offset_formatted = f"{offset[:3]}:{offset[3:]}"
+                                    db = next(get_db())
+                                    try:
+                                        crud.update_user_timezone(db, user_id, offset_formatted)
+                                    except Exception as e:
+                                        logger.debug(f"Could not save timezone for user {user_id}: {e}")
+                                    finally:
+                                        db.close()
+                        except (ValueError, AttributeError) as e:
+                            logger.debug(f"Could not parse client time: {e}")
+            except Exception as e:
+                logger.debug(f"Could not save timezone: {e}")
+        
+        return response
+
+app.add_middleware(TimezoneMiddleware)
+
+
 
 def generate_tasks_job():
-    """Задача для генерации задач в 00:00 каждый день"""
+    """Задача для генерации задач - запускается каждый час и проверяет, для каких пользователей наступило 00:00"""
     try:
         db = next(get_db())
-        # В 00:00 создаем задачи для нового дня (сегодня) на основе задач предыдущего дня
-        # Используем UTC для сохранения в БД
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        count = crud.generate_daily_tasks(db, today)
-        logger.info(f"🔄 Scheduled task: Generated {count} tasks for {today.date()}")
+        from datetime import timedelta
+        
+        # Получаем текущее время в UTC
+        now_utc = datetime.now(timezone.utc)
+        current_hour_utc = now_utc.hour
+        
+        # Получаем всех пользователей с сохраненным часовым поясом
+        users = crud.get_all_users_with_timezone(db)
+        
+        # Также получаем пользователей без часового пояса (используем UTC по умолчанию)
+        from sqlalchemy import select
+        from . import models
+        users_without_tz = db.execute(
+            select(models.Task.user_id).distinct()
+        ).scalars().all()
+        
+        # Создаем словарь для быстрого доступа
+        users_dict = {user.user_id: user for user in users}
+        
+        # Добавляем пользователей без часового пояса (используем UTC)
+        for user_id in users_without_tz:
+            if user_id not in users_dict:
+                # Создаем временный объект User с UTC
+                from types import SimpleNamespace
+                temp_user = SimpleNamespace(user_id=user_id, timezone_offset="+00:00")
+                users.append(temp_user)
+                users_dict[user_id] = temp_user
+        
+        if not users:
+            logger.debug("No users found")
+            db.close()
+            return
+        
+        total_created = 0
+        
+        for user in users:
+            if not user.timezone_offset:
+                continue
+            
+            try:
+                # Парсим offset (например, "+03:00" -> timedelta(hours=3))
+                offset_str = user.timezone_offset
+                sign = 1 if offset_str[0] == '+' else -1
+                hours = int(offset_str[1:3])
+                minutes = int(offset_str[4:6]) if len(offset_str) > 4 else 0
+                offset_hours = sign * (hours + minutes / 60)
+                
+                # Вычисляем текущий час в часовом поясе пользователя
+                user_tz = timezone(timedelta(hours=offset_hours))
+                now_user_tz = now_utc.astimezone(user_tz)
+                user_hour = now_user_tz.hour
+                
+                # Если в часовом поясе пользователя наступило 00:00
+                if user_hour == 0:
+                    # Вычисляем начало дня пользователя в UTC
+                    user_day_start = now_user_tz.replace(hour=0, minute=0, second=0, microsecond=0)
+                    user_day_start_utc = user_day_start.astimezone(timezone.utc)
+                    
+                    # Создаем задачи для этого дня
+                    # generate_daily_tasks нормализует дату в UTC, поэтому передаем timezone-aware datetime
+                    count = crud.generate_daily_tasks(db, user_day_start_utc, user_id=user.user_id)
+                    total_created += count
+                    if count > 0:
+                        logger.info(f"🔄 Generated {count} tasks for user {user.user_id} (timezone {user.timezone_offset}, local date: {user_day_start.date()})")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error generating tasks for user {user.user_id}: {e}", exc_info=True)
+                continue
+        
+        if total_created > 0:
+            logger.info(f"🔄 Total: Generated {total_created} tasks for all users at their local midnight")
+        else:
+            logger.debug(f"⏭️  No tasks generated (checked {len(users)} users, none at local midnight)")
+            
     except Exception as e:
         logger.error(f"❌ Error in scheduled task generation: {e}", exc_info=True)
     finally:
@@ -104,17 +213,17 @@ def on_startup() -> None:
         logger.info("🚀 Starting up application...")
         init_db()
         
-        # Настраиваем планировщик для генерации задач в 00:00 локального времени каждый день
-        # Используем None для timezone, чтобы использовалось локальное время сервера
+        # Настраиваем планировщик для генерации задач каждый час
+        # Он проверит всех пользователей и создаст задачи для тех, у кого наступило 00:00 в их часовом поясе
         scheduler.add_job(
             generate_tasks_job,
-            trigger=CronTrigger(hour=0, minute=0, timezone=None),  # Локальное время сервера
+            trigger=CronTrigger(minute=0),  # Каждый час в 00 минут
             id='generate_daily_tasks',
-            name='Generate daily tasks at midnight',
+            name='Generate daily tasks at midnight for each user timezone',
             replace_existing=True
         )
         scheduler.start()
-        logger.info("✅ Scheduler started - tasks will be generated at 00:00 local time daily")
+        logger.info("✅ Scheduler started - tasks will be generated at 00:00 for each user's local timezone")
         logger.info("✅ Application started successfully")
     except Exception as e:
         logger.error(f"❌ Failed to start application: {e}", exc_info=True)

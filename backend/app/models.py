@@ -63,5 +63,14 @@ class Note(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, unique=True, index=True, nullable=False)  # Telegram user_id
+    timezone_offset = Column(String(10), nullable=True)  # Например: "+03:00" или "-05:00"
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 
 

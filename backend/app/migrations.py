@@ -146,6 +146,45 @@ def migrate_all(db: Session):
         else:
             logger.info("⏭️  Поле 'parent_task_id' уже существует, пропускаем")
         
+        # Миграция 5: Создание таблицы users для хранения часовых поясов
+        if 'users' not in tables:
+            logger.info("🔄 Миграция 5: Создание таблицы 'users' для хранения часовых поясов...")
+            try:
+                if db.bind.dialect.name == 'sqlite':
+                    db.execute(text("""
+                        CREATE TABLE users (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER UNIQUE NOT NULL,
+                            timezone_offset VARCHAR(10),
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    db.execute(text("CREATE INDEX IF NOT EXISTS ix_users_user_id ON users(user_id)"))
+                else:  # PostgreSQL
+                    db.execute(text("""
+                        CREATE TABLE users (
+                            id SERIAL PRIMARY KEY,
+                            user_id INTEGER UNIQUE NOT NULL,
+                            timezone_offset VARCHAR(10),
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """))
+                    db.execute(text("CREATE INDEX IF NOT EXISTS ix_users_user_id ON users(user_id)"))
+                db.commit()
+                logger.info("✅ Таблица 'users' создана")
+            except Exception as e:
+                logger.warning(f"⚠️  Не удалось создать таблицу 'users' (возможно, уже существует): {e}")
+                db.rollback()
+                # Проверяем еще раз после ошибки
+                inspector = inspect(db.bind)
+                tables_after = inspector.get_table_names()
+                if 'users' in tables_after:
+                    logger.info("✅ Таблица 'users' существует, продолжаем")
+                else:
+                    raise
+        else:
+            logger.info("⏭️  Таблица 'users' уже существует, пропускаем")
+        
         logger.info("✅ Все миграции проверены и применены успешно")
         
     except Exception as e:
