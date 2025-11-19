@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef, useCallback, memo } from 'react'
+// Импортируем только нужные компоненты из recharts
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { format, isSameDay, isToday, startOfMonth, endOfMonth, eachDayOfInterval, startOfDay, getDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
 // Импорты утилит и хуков
-import { createApiClient } from './utils/api.js'
+import { createApiClient, invalidateCache } from './utils/api.js'
 import { useInitData, useTelegram } from './hooks/useTelegram.js'
 import { TASK_CATEGORIES, FREQUENCY_OPTIONS, MOOD_OPTIONS } from './constants/index.js'
 import { formatDateForAPI, getDaysAround } from './utils/dateUtils.js'
@@ -36,9 +37,9 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
     }
   }, [isEditing, task])
 
-  const api = createApiClient(initData)
+  const api = useMemo(() => createApiClient(initData), [initData])
 
-  const createTask = async () => {
+  const createTask = useCallback(async () => {
     if (!title.trim()) return
 
     setLoading(true)
@@ -67,6 +68,10 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
         })
       }
 
+      invalidateCache('/tasks') // Инвалидируем кэш задач
+      invalidateCache('/stats') // Инвалидируем кэш статистики
+      invalidateCache('/habits') // Инвалидируем кэш привычек
+
       onTaskCreated()
     } catch (error) {
       console.error(`Error ${isEditing ? 'updating' : 'creating'} task:`, error)
@@ -74,7 +79,7 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [api, title, description, category, frequency, isEditing, task, onTaskCreated])
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -199,9 +204,9 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
     }
   }, [isEditing, subtask])
 
-  const api = createApiClient(initData)
+  const api = useMemo(() => createApiClient(initData), [initData])
 
-  const createSubtask = async () => {
+  const createSubtask = useCallback(async () => {
     if (!title.trim()) return
 
     setLoading(true)
@@ -214,6 +219,7 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
             title: title.trim(),
           })
         })
+        invalidateCache('/tasks') // Инвалидируем кэш задач
         onSubtaskCreated()
       } else {
         await api('/subtask', {
@@ -223,7 +229,7 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
             title: title.trim(),
           })
         })
-
+        invalidateCache('/tasks') // Инвалидируем кэш задач
         onSubtaskCreated()
       }
     } catch (error) {
@@ -232,7 +238,7 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
     } finally {
       setLoading(false)
     }
-  }
+  }, [api, title, isEditing, subtask, parentTask, onSubtaskCreated])
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -312,9 +318,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
 
 
-  const api = createApiClient(initData)
+  const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     setLoading(true)
     try {
       // Форматируем выбранную дату для запроса
@@ -324,15 +330,14 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     } finally {
       setLoading(false)
     }
-  }
-
+  }, [api, selectedDate])
 
   const loadTasksRef = useRef(null)
   loadTasksRef.current = loadTasks
 
   useEffect(() => {
     loadTasks()
-  }, [selectedDate]) // Перезагружаем задачи при изменении выбранной даты
+  }, [loadTasks]) // Перезагружаем задачи при изменении выбранной даты
 
   // Перезагружаем задачи при монтировании компонента (ключ изменился)
   // Это обеспечит актуальный список после возврата со страницы редактирования
@@ -347,6 +352,27 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       })
     }
   }, [onTaskUpdated])
+
+  // Мемоизируем обработчики для предотвращения лишних ререндеров
+  const handleDateChange = useCallback((date) => {
+    setSelectedDate(date)
+  }, [])
+
+  const handleFilterChange = useCallback((filter) => {
+    setFilter(filter)
+  }, [])
+
+  const toggleTaskExpanded = useCallback((taskId) => {
+    setExpandedTasks(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId)
+      } else {
+        newSet.add(taskId)
+      }
+      return newSet
+    })
+  }, [])
 
   // // Бэкенд уже фильтрует задачи по выбранной дате, поэтому используем все полученные задачи
   // const tasksForSelectedDay = tasks
@@ -452,7 +478,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   }, [selectedDate])
 
 
-  const toggleTask = async (task) => {
+  const toggleTask = useCallback(async (task) => {
     // Блокируем изменение статуса для прошлых дат
     if (isPastDate) {
       return
@@ -460,6 +486,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
     try {
       const updated = await api(`/task/${task.id}/complete`, { method: 'POST' })
+      invalidateCache('/tasks') // Инвалидируем кэш задач
+      invalidateCache('/stats') // Инвалидируем кэш статистики
+      invalidateCache('/habits') // Инвалидируем кэш привычек
 
       // Если задача отменяется (completed стал false), отменяем все подзадачи
       if (!updated.completed && task.subtasks && task.subtasks.length > 0) {
@@ -499,9 +528,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     } catch (error) {
       console.error('Error toggling task:', error)
     }
-  }
+  }, [api, isPastDate])
 
-  const deleteTask = async (task) => {
+  const deleteTask = useCallback(async (task) => {
     // Блокируем удаление задач для прошлых дат
     if (isPastDate) {
       return
@@ -509,25 +538,19 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
     try {
       await api(`/task/${task.id}`, { method: 'DELETE' })
+      invalidateCache('/tasks') // Инвалидируем кэш задач
+      invalidateCache('/stats') // Инвалидируем кэш статистики
+      invalidateCache('/habits') // Инвалидируем кэш привычек
       setTasks(prev => prev.filter(t => t.id !== task.id))
     } catch (error) {
       console.error('Error deleting task:', error)
     }
-  }
+  }, [api, isPastDate])
 
-  const toggleExpanded = (taskId) => {
-    setExpandedTasks(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(taskId)) {
-        newSet.delete(taskId)
-      } else {
-        newSet.add(taskId)
-      }
-      return newSet
-    })
-  }
+  // Используем уже мемоизированную функцию
+  const toggleExpanded = toggleTaskExpanded
 
-  const toggleSubtask = async (subtask, parentTask) => {
+  const toggleSubtask = useCallback(async (subtask, parentTask) => {
     // Блокируем изменение статуса для прошлых дат
     if (isPastDate) {
       return
@@ -535,6 +558,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
     try {
       const updated = await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
+      invalidateCache('/tasks') // Инвалидируем кэш задач
 
       // Обновляем подзадачу в задаче
       setTasks(prev => prev.map(t => {
@@ -586,9 +610,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     } catch (error) {
       console.error('Error toggling subtask:', error)
     }
-  }
+  }, [api, isPastDate])
 
-  const deleteSubtask = async (subtaskId, parentTaskId) => {
+  const deleteSubtask = useCallback(async (subtaskId, parentTaskId) => {
     // Блокируем удаление подзадач для прошлых дат
     if (isPastDate) {
       return
@@ -596,6 +620,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
     try {
       await api(`/subtask/${subtaskId}`, { method: 'DELETE' })
+      invalidateCache('/tasks') // Инвалидируем кэш задач
       setTasks(prev => prev.map(t => {
         if (t.id === parentTaskId) {
           const updatedSubtasks = (t.subtasks || []).filter(st => st.id !== subtaskId)
@@ -630,7 +655,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     } catch (error) {
       console.error('Error deleting subtask:', error)
     }
-  }
+  }, [api, isPastDate])
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -649,7 +674,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               key={tab.key}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${filter === tab.key ? 'tab-active' : 'tab-inactive'
                 }`}
-              onClick={() => setFilter(tab.key)}
+              onClick={() => handleFilterChange(tab.key)}
             >
               {tab.label}
             </button>
@@ -681,7 +706,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               return (
                 <button
                   key={d.toISOString()}
-                  onClick={() => setSelectedDate(new Date(d))}
+                  onClick={() => handleDateChange(new Date(d))}
                   className={`flex-none w-16 h-14 inline-flex flex-col items-center justify-center rounded-xl border select-none ${isSel ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-700 border-gray-200'} ${isTod ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white' : ''}`}
                 >
                   <div className={`text-[10px] font-medium ${isSel ? 'text-white/90' : 'text-gray-500'}`}>
@@ -900,9 +925,9 @@ function StatisticsPage() {
   const [habitsStats, setHabitsStats] = useState([])
   const [loading, setLoading] = useState(false)
 
-  const api = createApiClient(initData)
+  const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadStats = async (p) => {
+  const loadStats = useCallback(async (p) => {
     setLoading(true)
     try {
       const data = await api(`/stats?period=${p}`)
@@ -919,9 +944,9 @@ function StatisticsPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [api])
 
-  const loadHabitsStats = async () => {
+  const loadHabitsStats = useCallback(async () => {
     try {
       const data = await api('/habits')
       setHabitsStats(data)
@@ -929,12 +954,36 @@ function StatisticsPage() {
       console.error('Error loading habits stats:', error)
       setHabitsStats([])
     }
-  }
+  }, [api])
 
   useEffect(() => {
     loadStats(period)
     loadHabitsStats()
-  }, [period])
+  }, [period, loadStats, loadHabitsStats])
+
+  const handlePeriodChange = useCallback((e) => {
+    setPeriod(e.target.value)
+  }, [])
+
+  // Мемоизируем данные для графика
+  const pieData = useMemo(() => {
+    if (!stats || stats.total === 0) return []
+
+    if (stats.completed === stats.total) {
+      return [{ name: 'Выполнено', value: 100, color: '#10B981' }]
+    }
+
+    return [
+      { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
+      { name: 'Не выполнено', value: stats.in_progress || 0, color: '#8B5CF6' },
+    ]
+  }, [stats])
+
+  // Мемоизируем процент выполнения
+  const completionPercentage = useMemo(() => {
+    if (!stats || stats.total === 0) return 0
+    return Math.round(((stats.completed || 0) / stats.total) * 100)
+  }, [stats])
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -950,7 +999,7 @@ function StatisticsPage() {
             <h2 className="text-lg font-semibold">Активность</h2>
             <select
               value={period}
-              onChange={(e) => setPeriod(e.target.value)}
+              onChange={handlePeriodChange}
               className="bg-gray-100 rounded-lg px-3 py-1 text-sm"
             >
               <option value="day">День</option>
@@ -971,17 +1020,7 @@ function StatisticsPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={
-                        stats.total > 0 && stats.completed === stats.total
-                          ? [
-                            // Если 100% выполнено - показываем один полностью залитый круг
-                            { name: 'Выполнено', value: 100, color: '#10B981' },
-                          ]
-                          : [
-                            { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
-                            { name: 'Не выполнено', value: stats.in_progress || 0, color: '#8B5CF6' },
-                          ]
-                      }
+                      data={pieData}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
@@ -991,14 +1030,7 @@ function StatisticsPage() {
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {(
-                        stats.total > 0 && stats.completed === stats.total
-                          ? [{ name: 'Выполнено', value: 100, color: '#10B981' }]
-                          : [
-                            { name: 'Выполнено', value: stats.completed || 0, color: '#10B981' },
-                            { name: 'Не выполнено', value: stats.in_progress || 0, color: '#8B5CF6' },
-                          ]
-                      ).map((entry, index) => (
+                      {pieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -1008,7 +1040,7 @@ function StatisticsPage() {
                 {/* Центральный текст - только проценты */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <div className="text-xl font-bold text-gray-800">
-                    {stats.total > 0 ? Math.round(((stats.completed || 0) / stats.total) * 100) : 0}%
+                    {completionPercentage}%
                   </div>
                 </div>
               </div>
@@ -1066,9 +1098,7 @@ function StatisticsPage() {
                   streakText = '1 день'
                 } else if (maxStreak > 1 && maxStreak <= 4) {
                   streakText = `${maxStreak} дня`
-                } else if (maxStreak > 4 && maxStreak <= 7) {
-                  streakText = `${maxStreak} дней`
-                } else if (maxStreak > 7) {
+                } else if (maxStreak > 4) {
                   streakText = `${maxStreak} дней`
                 }
 
@@ -1087,7 +1117,7 @@ function StatisticsPage() {
                       <div className="text-sm text-orange-500">{streakText}</div>
                     </div>
                     <div className="streak-dots">
-                      {[...Array(7)].map((_, i) => (
+                      {Array.from({ length: 7 }, (_, i) => (
                         <div key={i} className={`streak-dot ${i < filledCircles ? 'active' : 'inactive'}`} />
                       ))}
                     </div>
@@ -1139,9 +1169,9 @@ function JournalPage() {
   const [editMood, setEditMood] = useState('')
 
 
-  const api = createApiClient(initData)
+  const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadNotes = async (date) => {
+  const loadNotes = useCallback(async (date) => {
     setLoading(true)
     try {
       const dateStr = format(date, 'yyyy-MM-dd')
@@ -1150,7 +1180,7 @@ function JournalPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [api])
 
   const normalizeMood = (mood) => {
     switch (mood) {
@@ -1181,7 +1211,7 @@ function JournalPage() {
     }
   }
 
-  const loadMonthMood = async (date) => {
+  const loadMonthMood = useCallback(async (date) => {
     try {
       // Загружаем все заметки за месяц одним запросом
       const year = date.getFullYear()
@@ -1210,7 +1240,7 @@ function JournalPage() {
       console.error('Error loading month mood:', e)
       // В случае ошибки просто не обновляем карту
     }
-  }
+  }, [api])
 
   const createNote = async () => {
     if (!selectedMood) {
@@ -1290,11 +1320,11 @@ function JournalPage() {
   useEffect(() => {
     loadNotes(selectedDate)
     setShowCreateForm(false)
-  }, [selectedDate])
+  }, [selectedDate, loadNotes])
 
   useEffect(() => {
     loadMonthMood(selectedDate)
-  }, [selectedDate.getFullYear(), selectedDate.getMonth()])
+  }, [selectedDate.getFullYear(), selectedDate.getMonth(), loadMonthMood])
 
   const calendarDays = useMemo(() => {
     const start = startOfMonth(selectedDate)
@@ -1308,13 +1338,17 @@ function JournalPage() {
     return [...emptyDays, ...days]
   }, [selectedDate])
 
-  const goToPreviousMonth = () => {
+  const goToPreviousMonth = useCallback(() => {
     setSelectedDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-  }
+  }, [])
 
-  const goToNextMonth = () => {
+  const goToNextMonth = useCallback(() => {
     setSelectedDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
-  }
+  }, [])
+
+  const handleDateSelect = useCallback((day) => {
+    setSelectedDate(day)
+  }, [])
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -1364,7 +1398,7 @@ function JournalPage() {
                   return (
                     <button
                       className={`calendar-day ${isToday(day) ? 'today' : ''} ${color}`}
-                      onClick={() => setSelectedDate(day)}
+                      onClick={() => handleDateSelect(day)}
                     >
                       {format(day, 'd')}
                     </button>
