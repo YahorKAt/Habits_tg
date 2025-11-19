@@ -15,9 +15,6 @@ class Task(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed = Column(Boolean, default=False, nullable=False)
     
-    # Поле для связи с оригинальной задачей (для повторяющихся задач)
-    parent_task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True, index=True)
-    
     # Поля для повторяющихся задач
     repeat_interval = Column(Integer, default=1, nullable=False)  # каждые N дней/недель/месяцев
     next_due_date = Column(DateTime(timezone=True), nullable=True)
@@ -35,7 +32,6 @@ class Task(Base):
     
     # Поле для мягкого удаления (архивирование)
     deleted = Column(Boolean, default=False, nullable=False)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     subtasks = relationship("Subtask", cascade="all, delete-orphan", back_populates="task")
 

@@ -49,7 +49,6 @@ class TaskOut(BaseModel):
     frequency: str
     streak: int = 0
     deleted: bool = False
-    deleted_at: Optional[datetime] = None
     subtasks: List[SubtaskOut] = []
 
     model_config = ConfigDict(from_attributes=True)

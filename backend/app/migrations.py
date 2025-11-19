@@ -118,37 +118,55 @@ def migrate_all(db: Session):
         else:
             logger.info("⏭️  Поле 'repeat_type' уже удалено, пропускаем")
         
-        # Миграция 4: Добавление поля parent_task_id для связи с оригинальной задачей
-        if not column_exists('tasks', 'parent_task_id', db):
-            logger.info("🔄 Миграция 4: Добавление поля 'parent_task_id' в таблицу tasks...")
+        # Миграция 4: Удаление неиспользуемых полей parent_task_id и deleted_at
+        if column_exists('tasks', 'parent_task_id', db):
+            logger.info("🔄 Миграция 4: Удаление неиспользуемого поля 'parent_task_id' из таблицы tasks...")
             try:
                 if db.bind.dialect.name == 'sqlite':
-                    db.execute(text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER"))
-                    # SQLite не поддерживает внешние ключи через ALTER TABLE, но можно добавить индекс
+                    # SQLite не поддерживает DROP COLUMN напрямую, нужно пересоздать таблицу
+                    # Для простоты просто пропускаем удаление в SQLite (поле просто не будет использоваться)
+                    logger.warning("⚠️  SQLite не поддерживает DROP COLUMN. Поле 'parent_task_id' останется в таблице, но не будет использоваться.")
+                else:  # PostgreSQL
+                    # Сначала удаляем индекс и внешний ключ
                     try:
-                        db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_parent_task_id ON tasks(parent_task_id)"))
+                        db.execute(text("DROP INDEX IF EXISTS ix_tasks_parent_task_id"))
                     except:
                         pass
-                else:  # PostgreSQL
-                    db.execute(text("ALTER TABLE tasks ADD COLUMN parent_task_id INTEGER"))
-                    db.execute(text("ALTER TABLE tasks ADD CONSTRAINT fk_tasks_parent_task_id FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE"))
-                    db.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_parent_task_id ON tasks(parent_task_id)"))
-                db.commit()
-                logger.info("✅ Поле 'parent_task_id' добавлено")
+                    try:
+                        db.execute(text("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS fk_tasks_parent_task_id"))
+                    except:
+                        pass
+                    db.execute(text("ALTER TABLE tasks DROP COLUMN IF EXISTS parent_task_id"))
+                    db.commit()
+                    logger.info("✅ Поле 'parent_task_id' удалено")
             except Exception as e:
-                logger.warning(f"⚠️  Не удалось добавить поле 'parent_task_id' (возможно, уже существует): {e}")
+                logger.warning(f"⚠️  Не удалось удалить поле 'parent_task_id': {e}")
                 db.rollback()
-                # Проверяем еще раз после ошибки
-                if column_exists('tasks', 'parent_task_id', db):
-                    logger.info("✅ Поле 'parent_task_id' существует, продолжаем")
-                else:
-                    raise
+                logger.info("⚠️  Поле 'parent_task_id' останется в таблице, но не будет использоваться")
         else:
-            logger.info("⏭️  Поле 'parent_task_id' уже существует, пропускаем")
+            logger.info("⏭️  Поле 'parent_task_id' уже удалено, пропускаем")
         
-        # Миграция 5: Создание таблицы users для хранения часовых поясов
+        if column_exists('tasks', 'deleted_at', db):
+            logger.info("🔄 Миграция 5: Удаление неиспользуемого поля 'deleted_at' из таблицы tasks...")
+            try:
+                if db.bind.dialect.name == 'sqlite':
+                    # SQLite не поддерживает DROP COLUMN напрямую, нужно пересоздать таблицу
+                    # Для простоты просто пропускаем удаление в SQLite (поле просто не будет использоваться)
+                    logger.warning("⚠️  SQLite не поддерживает DROP COLUMN. Поле 'deleted_at' останется в таблице, но не будет использоваться.")
+                else:  # PostgreSQL
+                    db.execute(text("ALTER TABLE tasks DROP COLUMN IF EXISTS deleted_at"))
+                    db.commit()
+                    logger.info("✅ Поле 'deleted_at' удалено")
+            except Exception as e:
+                logger.warning(f"⚠️  Не удалось удалить поле 'deleted_at': {e}")
+                db.rollback()
+                logger.info("⚠️  Поле 'deleted_at' останется в таблице, но не будет использоваться")
+        else:
+            logger.info("⏭️  Поле 'deleted_at' уже удалено, пропускаем")
+        
+        # Миграция 6: Создание таблицы users для хранения часовых поясов
         if 'users' not in tables:
-            logger.info("🔄 Миграция 5: Создание таблицы 'users' для хранения часовых поясов...")
+            logger.info("🔄 Миграция 6: Создание таблицы 'users' для хранения часовых поясов...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     db.execute(text("""
