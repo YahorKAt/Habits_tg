@@ -181,13 +181,15 @@ def generate_tasks_job():
                 
                 # Если в часовом поясе пользователя наступило 00:00
                 if user_hour == 0:
-                    # Вычисляем начало дня пользователя в UTC
+                    # Вычисляем начало нового дня пользователя в его часовом поясе
                     user_day_start = now_user_tz.replace(hour=0, minute=0, second=0, microsecond=0)
                     user_day_start_utc = user_day_start.astimezone(timezone.utc)
                     
-                    # Создаем задачи для этого дня
-                    # generate_daily_tasks нормализует дату в UTC, поэтому передаем timezone-aware datetime
-                    count = crud.generate_daily_tasks(db, user_day_start_utc, user_id=user.user_id)
+                    # Важно: user_day_start_utc может быть предыдущим днем в UTC (например, 21:00 предыдущего дня)
+                    # Но это правильная дата для генерации задач - она представляет начало нового дня в часовом поясе пользователя
+                    # Передаем is_user_timezone_start=True, чтобы функция использовала дату как есть
+                    # Задачи будут созданы с created_at = user_day_start_utc (начало дня в часовом поясе пользователя, в UTC)
+                    count = crud.generate_daily_tasks(db, user_day_start_utc, user_id=user.user_id, is_user_timezone_start=True)
                     total_created += count
                     if count > 0:
                         logger.info(f"🔄 Generated {count} tasks for user {user.user_id} (timezone {user.timezone_offset}, local date: {user_day_start.date()})")

@@ -686,28 +686,40 @@ def delete_note(db: Session, note_id: int, user_id: int) -> bool:
 
 
 #Автоматическая генерация задач на следующий день
-def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Optional[int] = None):
+def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Optional[int] = None, is_user_timezone_start: bool = False):
     """
     Генерирует задачи для нового дня.
     В 00:00 10 ноября создает задачи для 10 ноября на основе задач 9 ноября.
     
     Логика:
     - Находит все задачи из предыдущего дня (кроме удаленных)
-    - Создает новые задачи для нового дня с created_at = новый день
+    - Создает новые задачи для нового дня с created_at = начало дня в часовом поясе пользователя (в UTC)
     - Копирует все подзадачи со статусом "не выполнено"
     
     Args:
         target_date: Дата, для которой нужно создать задачи (по умолчанию - сегодня)
+            Если is_user_timezone_start=True, то это начало дня в часовом поясе пользователя (в UTC).
+            Например, для пользователя в +03:00 начало дня 19 ноября = 21:00:00 18 ноября UTC.
         user_id: ID пользователя, для которого создавать задачи (если None - для всех пользователей)
+        is_user_timezone_start: Если True, target_date уже представляет начало дня в часовом поясе пользователя (в UTC).
+            В этом случае дата используется как есть, без нормализации к началу дня в UTC.
     """
     if target_date is None:
         target_date = datetime.now(timezone.utc)
     
-    # Нормализуем даты в UTC (timezone-aware)
+    # Нормализуем дату в UTC (timezone-aware)
     target_date = normalize_to_utc(target_date) or datetime.now(timezone.utc)
-    target_date = normalize_date_to_utc_day(target_date) or target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    prev_date = target_date - timedelta(days=1)
+    # Если дата уже представляет начало дня в часовом поясе пользователя, используем как есть
+    if is_user_timezone_start:
+        # Это начало дня в часовом поясе пользователя (в UTC)
+        # Например, для пользователя в +03:00: 21:00:00 18 ноября UTC = 00:00:00 19 ноября в его часовом поясе
+        # Для вычисления предыдущего дня вычитаем 1 день
+        prev_date = target_date - timedelta(days=1)
+    else:
+        # Нормализуем к началу дня в UTC (для обратной совместимости и ручных вызовов)
+        target_date = normalize_date_to_utc_day(target_date) or target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        prev_date = target_date - timedelta(days=1)
     
     # Создаем диапазоны для сравнения с timezone-aware полями в БД
     # Ищем все задачи, у которых created_at попадает в диапазон предыдущего дня
@@ -719,7 +731,11 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
     target_date_start = target_date
     target_date_end = target_date + timedelta(days=1)
     
-    logger.info(f"🔄 Generating tasks for {target_date.date()}, looking for tasks from {prev_date.date()}")
+    # Логируем дату: если is_user_timezone_start, показываем что это начало дня в часовом поясе пользователя
+    if is_user_timezone_start:
+        logger.info(f"🔄 Generating tasks for user timezone day start: {target_date} UTC (looking for tasks from {prev_date} UTC)")
+    else:
+        logger.info(f"🔄 Generating tasks for {target_date.date()}, looking for tasks from {prev_date.date()}")
     if user_id:
         logger.info(f"   For user_id: {user_id}")
     logger.info(f"   Date range: {prev_date_start} <= created_at < {prev_date_end}")
