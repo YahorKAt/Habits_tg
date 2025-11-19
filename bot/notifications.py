@@ -37,18 +37,23 @@ async def send_notifications_job(bot: Bot, target_hour: int, message: str):
     try:
         # Получаем текущее время в UTC
         now_utc = datetime.now(timezone.utc)
+        logger.info(f"🕐 Running notifications job at {now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')} for target hour {target_hour}:00")
         
         # Получаем всех пользователей
         users = get_all_users_with_timezone()
         
         if not users:
-            logger.debug("No users found for notifications")
+            logger.warning("⚠️ No users found for notifications")
             return
         
+        logger.info(f"👥 Found {len(users)} users to check")
+        
         sent_count = 0
+        checked_count = 0
         
         for user in users:
             if not user.timezone_offset:
+                logger.debug(f"⏭️  User {user.user_id} has no timezone_offset, skipping")
                 continue
             
             try:
@@ -59,20 +64,28 @@ async def send_notifications_job(bot: Bot, target_hour: int, message: str):
                 # Вычисляем текущее время в часовом поясе пользователя
                 now_user_tz = now_utc.astimezone(user_tz)
                 user_hour = now_user_tz.hour
+                user_minute = now_user_tz.minute
+                checked_count += 1
                 
-                # Если наступило нужное время
-                if user_hour == target_hour:
+                logger.debug(f"👤 User {user.user_id}: timezone={user.timezone_offset}, local time={now_user_tz.strftime('%H:%M')}, hour={user_hour}")
+                
+                # Проверяем, что наступило нужное время (в пределах первых 5 минут часа)
+                # Это позволяет отправлять уведомления даже если задача запустилась с небольшой задержкой
+                if user_hour == target_hour and user_minute < 5:
+                    logger.info(f"✅ Sending notification to user {user.user_id} (local time: {now_user_tz.strftime('%H:%M')})")
                     await send_notification(bot, user.user_id, message)
                     sent_count += 1
+                elif user_hour == target_hour:
+                    logger.debug(f"⏭️  User {user.user_id} is at {target_hour}:{user_minute:02d}, but minute > 5, skipping")
                     
             except Exception as e:
                 logger.error(f"❌ Error processing user {user.user_id} for notifications: {e}", exc_info=True)
                 continue
         
         if sent_count > 0:
-            logger.info(f"📨 Sent {sent_count} notifications ({message[:30]}...)")
+            logger.info(f"📨 Sent {sent_count} notifications out of {checked_count} checked users ({message[:30]}...)")
         else:
-            logger.debug(f"⏭️  No notifications sent (checked {len(users)} users, none at {target_hour}:00)")
+            logger.info(f"⏭️  No notifications sent (checked {checked_count} users, none at {target_hour}:00-{target_hour}:05)")
             
     except Exception as e:
         logger.error(f"❌ Error in notifications job: {e}", exc_info=True)

@@ -45,6 +45,55 @@ async def start(message: types.Message):
     await message.answer("Open the Habits Mini App:", reply_markup=kb)
 
 
+@dp.message_handler(commands=["test_notification"])
+async def test_notification(message: types.Message):
+    """Тестовая команда для проверки отправки уведомлений"""
+    user_id = message.from_user.id
+    try:
+        await bot.send_message(chat_id=user_id, text="🧪 Тестовое уведомление работает!")
+        logger.info(f"✅ Test notification sent to user {user_id}")
+        await message.answer("✅ Тестовое уведомление отправлено!")
+    except Exception as e:
+        logger.error(f"❌ Failed to send test notification to user {user_id}: {e}")
+        await message.answer(f"❌ Ошибка отправки уведомления: {e}")
+
+
+@dp.message_handler(commands=["check_timezone"])
+async def check_timezone(message: types.Message):
+    """Проверяет часовой пояс пользователя"""
+    from db_utils import get_all_users_with_timezone
+    from notifications import parse_timezone_offset
+    from datetime import datetime, timezone, timedelta
+    
+    user_id = message.from_user.id
+    users = get_all_users_with_timezone()
+    
+    user = next((u for u in users if u.user_id == user_id), None)
+    
+    if user and user.timezone_offset:
+        # Вычисляем текущее время пользователя
+        offset_hours = parse_timezone_offset(user.timezone_offset)
+        user_tz = timezone(timedelta(hours=offset_hours))
+        now_utc = datetime.now(timezone.utc)
+        now_user_tz = now_utc.astimezone(user_tz)
+        
+        response = (
+            f"📍 Ваш часовой пояс: {user.timezone_offset}\n"
+            f"🕐 Текущее время (UTC): {now_utc.strftime('%H:%M:%S')}\n"
+            f"🕐 Ваше локальное время: {now_user_tz.strftime('%H:%M:%S')}\n"
+            f"📅 Уведомления приходят в:\n"
+            f"   • 9:00 (утро)\n"
+            f"   • 22:00 (вечер)"
+        )
+    else:
+        response = (
+            f"⚠️ Часовой пояс не сохранен в базе данных.\n"
+            f"Откройте Mini App, чтобы сохранить часовой пояс."
+        )
+    
+    await message.answer(response)
+
+
 async def run_evening_notifications():
     """Обертка для запуска вечерних уведомлений"""
     await send_evening_notifications(bot)
@@ -81,6 +130,8 @@ async def on_startup(_):
     
     scheduler.start()
     logger.info("✅ Notification scheduler started")
+    logger.info("📅 Evening notifications will run at 22:00 user time")
+    logger.info("📅 Morning notifications will run at 9:00 user time")
 
 
 async def on_shutdown(_):
