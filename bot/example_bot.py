@@ -93,6 +93,13 @@ async def on_shutdown(_):
 if __name__ == "__main__":
     print("Starting bot...")
     
+    # Создаем event loop если его нет
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     try:
         # Запускаем бота с callbacks для startup и shutdown
         executor.start_polling(
