@@ -77,7 +77,7 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white px-4 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
@@ -235,7 +235,7 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white px-4 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
@@ -633,7 +633,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white px-4 py-4">
         <h1 className="text-xl font-semibold">Мои задачи</h1>
@@ -657,7 +657,7 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
         </div>
       </div>
 
-      <div className="p-4 pb-24 space-y-3">
+      <div className="px-4 py-4 pb-24 space-y-3">
         {/* Календарная лента дат */}
         <div className="card mb-2">
           <div className="flex items-center justify-between mb-3">
@@ -665,7 +665,16 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               {(() => { const label = format(selectedDate, 'd LLLL yyyy', { locale: ru }); return label.charAt(0).toUpperCase() + label.slice(1) })()}
             </div>
           </div>
-          <div ref={ribbonRef} className="flex gap-2 overflow-x-auto pb-1 pt-1 pr-1">
+          <div
+            ref={ribbonRef}
+            className="flex gap-2 overflow-x-auto pb-1 pt-1 scrollbar-hide"
+            style={{
+              paddingRight: 'max(1rem, env(safe-area-inset-right, 0px))',
+              paddingLeft: 'max(0px, env(safe-area-inset-left, 0px))',
+              marginLeft: '-1rem',
+              marginRight: '-1rem'
+            }}
+          >
             {daysAround.map((d) => {
               const isSel = isSameDay(d, selectedDate)
               const isTod = isSameDay(d, new Date())
@@ -928,7 +937,7 @@ function StatisticsPage() {
   }, [period])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white px-4 py-4">
         <h1 className="text-xl font-semibold">Статистика</h1>
@@ -1308,7 +1317,7 @@ function JournalPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Header */}
       <div className="bg-white px-4 py-4">
         <h1 className="text-xl font-semibold">Журнал</h1>
