@@ -1,6 +1,9 @@
 aiohttp==3.8.6
 aiogram==2.25.1
 python-dotenv==1.0.1
+apscheduler==3.10.4
+sqlalchemy==2.0.32
+psycopg2-binary==2.9.9
 
 annotated-types==0.7.0
 anyio==4.11.0
