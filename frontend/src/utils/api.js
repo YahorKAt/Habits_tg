@@ -6,16 +6,16 @@ import { apiCache } from './apiCache.js'
 
 const API_URL = import.meta.env.VITE_API_URL
 
-// Кэш для getClientLocalTime (вычисляется только раз в секунду)
+// Кэш для getClientLocalTime (вычисляется только раз в 10 секунд)
 let cachedClientTime = null
 let cachedTime = 0
 
 /**
- * Получает локальное время клиента с timezone offset (кэшируется на 1 секунду)
+ * Получает локальное время клиента с timezone offset (кэшируется на 5 секунд)
  */
 export const getClientLocalTime = () => {
   const now = Date.now()
-  if (cachedClientTime && now - cachedTime < 1000) {
+  if (cachedClientTime && now - cachedTime < 10000) {
     return cachedClientTime
   }
 
