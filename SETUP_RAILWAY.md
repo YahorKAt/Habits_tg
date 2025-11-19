@@ -141,7 +141,17 @@ PORT=автоматически
 ```
 BOT_TOKEN=ваш_токен
 WEBAPP_URL=https://habits-tg.vercel.app
+DATABASE_URL=такой_же_как_в_backend
 ```
+
+**ВАЖНО для Bot Service:**
+- Бот должен использовать **тот же DATABASE_URL**, что и Backend
+- Если Backend и Bot в одном Railway проекте:
+  - Можно использовать внутренний URL: `postgresql://postgres:password@postgres.railway.internal:5432/railway`
+  - Или скопировать `DATABASE_URL` из Backend сервиса
+- Если Bot запущен отдельно (не на Railway):
+  - Нужно использовать **публичный URL** из PostgreSQL сервиса на Railway
+  - В PostgreSQL сервисе: Settings → Networking → "Public Networking" → скопируйте публичный URL
 
 ### Frontend (Vercel):
 ```

@@ -40,7 +40,11 @@ async def send_notifications_job(bot: Bot, target_hour: int, message: str):
         logger.info(f"🕐 Running notifications job at {now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')} for target hour {target_hour}:00")
         
         # Получаем всех пользователей
-        users = get_all_users_with_timezone()
+        try:
+            users = get_all_users_with_timezone()
+        except Exception as db_error:
+            logger.error(f"❌ Database error when getting users: {db_error}", exc_info=True)
+            return
         
         if not users:
             logger.warning("⚠️ No users found for notifications")
