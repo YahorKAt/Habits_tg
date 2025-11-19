@@ -489,43 +489,111 @@ def reset_streak_if_missed(task: models.Task, now: datetime = None) -> int:
 
 
 #Статистика 
+def parse_timezone_offset(offset_str: str) -> float:
+    """Парсит строку часового пояса в число часов"""
+    if not offset_str:
+        return 0.0
+    
+    sign = 1 if offset_str[0] == '+' else -1
+    hours = int(offset_str[1:3])
+    minutes = int(offset_str[4:6]) if len(offset_str) > 4 else 0
+    return sign * (hours + minutes / 60)
+
+
 def get_stats(db: Session, user_id: int, period: str):
     """
     Получает статистику по задачам для указанного периода.
     Учитывает только основные задачи, без подзадач.
     Оптимизировано для быстрой работы с большим количеством задач.
+    Учитывает локальное время пользователя на основе его timezone.
     
-    Периоды:
-    - "day" - сегодня
-    - "week" - текущая неделя
-    - "month" - текущий месяц
+    Периоды (по локальному времени пользователя):
+    - "day" - сегодня (например, для UTC+3: с 19.11 21:00 UTC по 20.11 21:00 UTC)
+    - "week" - текущая неделя (с понедельника по локальному времени)
+    - "month" - текущий месяц (с 1 числа по локальному времени)
     - "all" - все время
     """
+    # Получаем часовой пояс пользователя
+    user_timezone_offset = get_user_timezone(db, user_id)
+    
     # Используем timezone-aware datetime в UTC
-    now = datetime.now(timezone.utc)
-    today = normalize_date_to_utc_day(now)
+    now_utc = datetime.now(timezone.utc)
     
-    if today is None:
-        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # Определяем границы периода в локальном времени пользователя, затем преобразуем в UTC
+    user_tz = None
+    now_user_tz = None
+    period_start_utc = None
+    period_end_utc = None
     
-    # Определяем период фильтрации (timezone-aware)
-    since = None
-    if period == "day":
-        since = today
-    elif period == "week":
-        # Начало текущей недели (понедельник)
-        since = today - timedelta(days=today.weekday())
-    elif period == "month":
-        # Начало текущего месяца
-        since = today.replace(day=1)
-    # elif period == "all": since остается None
+    if user_timezone_offset:
+        try:
+            offset_hours = parse_timezone_offset(user_timezone_offset)
+            user_tz = timezone(timedelta(hours=offset_hours))
+            now_user_tz = now_utc.astimezone(user_tz)
+        except Exception as e:
+            logger.warning(f"Could not parse timezone {user_timezone_offset} for user {user_id}: {e}, using UTC")
+            user_tz = None
+    
+    if user_tz and now_user_tz:
+        # Определяем период в локальном времени пользователя
+        if period == "day":
+            # Начало сегодняшнего дня в локальном времени пользователя
+            day_start_user_local = now_user_tz.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Конец сегодняшнего дня в локальном времени пользователя
+            day_end_user_local = day_start_user_local + timedelta(days=1)
+            # Преобразуем в UTC для фильтрации в БД
+            period_start_utc = day_start_user_local.astimezone(timezone.utc)
+            period_end_utc = day_end_user_local.astimezone(timezone.utc)
+        elif period == "week":
+            # Начало текущей недели (понедельник) в локальном времени пользователя
+            week_start_user_local = now_user_tz.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now_user_tz.weekday())
+            # Конец недели (начало следующего понедельника)
+            week_end_user_local = week_start_user_local + timedelta(days=7)
+            period_start_utc = week_start_user_local.astimezone(timezone.utc)
+            period_end_utc = week_end_user_local.astimezone(timezone.utc)
+        elif period == "month":
+            # Начало текущего месяца в локальном времени пользователя
+            month_start_user_local = now_user_tz.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Начало следующего месяца
+            if month_start_user_local.month == 12:
+                month_end_user_local = month_start_user_local.replace(year=month_start_user_local.year + 1, month=1)
+            else:
+                month_end_user_local = month_start_user_local.replace(month=month_start_user_local.month + 1)
+            period_start_utc = month_start_user_local.astimezone(timezone.utc)
+            period_end_utc = month_end_user_local.astimezone(timezone.utc)
+    else:
+        # Если timezone не установлен, используем UTC
+        today = normalize_date_to_utc_day(now_utc)
+        if today is None:
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        if period == "day":
+            period_start_utc = today
+            period_end_utc = today + timedelta(days=1)
+        elif period == "week":
+            period_start_utc = today - timedelta(days=today.weekday())
+            period_end_utc = period_start_utc + timedelta(days=7)
+        elif period == "month":
+            period_start_utc = today.replace(day=1)
+            if period_start_utc.month == 12:
+                period_end_utc = period_start_utc.replace(year=period_start_utc.year + 1, month=1)
+            else:
+                period_end_utc = period_start_utc.replace(month=period_start_utc.month + 1)
+    
+    # Определяем период фильтрации для запроса (timezone-aware в UTC)
+    since = period_start_utc if period != "all" else None
     
     # Базовые условия для запроса
     base_conditions = [
         models.Task.user_id == user_id
     ]
     
-    if since is not None:
+    # Фильтруем задачи по периоду (используем диапазон для точности)
+    if period_start_utc is not None and period_end_utc is not None:
+        base_conditions.append(models.Task.created_at >= period_start_utc)
+        base_conditions.append(models.Task.created_at < period_end_utc)
+    elif since is not None:
+        # Fallback для обратной совместимости
         base_conditions.append(models.Task.created_at >= since)
     
     # Подсчитываем выполненные задачи (используя COUNT вместо загрузки всех задач)
@@ -537,12 +605,21 @@ def get_stats(db: Session, user_id: int, period: str):
     
     # Для периода "all" все выполненные задачи считаются выполненными
     if period == "all":
-        completed = db.execute(completed_query).scalar() or 0
-        in_progress_query = select(func.count()).select_from(models.Task).where(
-            *base_conditions,
-            models.Task.completed == False  # noqa: E712
-        )
-        in_progress = db.execute(in_progress_query).scalar() or 0
+        # Для "all" не фильтруем по дате создания
+        all_conditions = [models.Task.user_id == user_id]
+        completed = db.execute(
+            select(func.count()).select_from(models.Task).where(
+                *all_conditions,
+                models.Task.completed == True,  # noqa: E712
+                models.Task.last_completed_date.isnot(None)
+            )
+        ).scalar() or 0
+        in_progress = db.execute(
+            select(func.count()).select_from(models.Task).where(
+                *all_conditions,
+                models.Task.completed == False  # noqa: E712
+            )
+        ).scalar() or 0
         upcoming = 0
     else:
         # Для других периодов нужно проверять дату выполнения
@@ -564,44 +641,83 @@ def get_stats(db: Session, user_id: int, period: str):
             
             if task_completed and task_last_completed:
                 # Нормализуем дату выполнения в UTC (timezone-aware)
-                completed_date = normalize_date_to_utc_day(task_last_completed)
+                completed_date_utc = normalize_to_utc(task_last_completed)
                 
-                if completed_date is None:
+                if completed_date_utc is None:
                     continue
                 
-                # Для периода "day" проверяем, что задача выполнена сегодня
+                # Преобразуем дату выполнения в локальное время пользователя для сравнения
+                if user_tz:
+                    completed_date_user_tz = completed_date_utc.astimezone(user_tz)
+                    completed_date_user_local = completed_date_user_tz.replace(hour=0, minute=0, second=0, microsecond=0)
+                else:
+                    completed_date_user_local = normalize_date_to_utc_day(completed_date_utc)
+                
+                # Проверяем, попадает ли дата выполнения в период (по локальному времени пользователя)
                 if period == "day":
-                    if completed_date == today:
-                        completed += 1
+                    # Сравниваем с началом дня в локальном времени пользователя
+                    if user_tz and now_user_tz:
+                        day_start_user_local = now_user_tz.replace(hour=0, minute=0, second=0, microsecond=0)
+                        if completed_date_user_local == day_start_user_local:
+                            completed += 1
+                        else:
+                            in_progress += 1
                     else:
-                        in_progress += 1
-                # Для периода "week" проверяем, что задача выполнена на этой неделе
+                        # Fallback на UTC
+                        today_utc = normalize_date_to_utc_day(now_utc)
+                        if completed_date_user_local == today_utc:
+                            completed += 1
+                        else:
+                            in_progress += 1
                 elif period == "week":
-                    week_start = today - timedelta(days=today.weekday())
-                    completed_week_start = completed_date - timedelta(days=completed_date.weekday())
-                    if completed_week_start == week_start:
-                        completed += 1
+                    # Сравниваем с началом недели в локальном времени пользователя
+                    if user_tz and now_user_tz:
+                        week_start_user_local = now_user_tz.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now_user_tz.weekday())
+                        completed_week_start_user_local = completed_date_user_tz.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=completed_date_user_tz.weekday())
+                        if completed_week_start_user_local == week_start_user_local:
+                            completed += 1
+                        else:
+                            in_progress += 1
                     else:
-                        in_progress += 1
-                # Для периода "month" проверяем, что задача выполнена в этом месяце
+                        # Fallback на UTC
+                        today_utc = normalize_date_to_utc_day(now_utc)
+                        week_start_utc = today_utc - timedelta(days=today_utc.weekday())
+                        completed_week_start_utc = completed_date_user_local - timedelta(days=completed_date_user_local.weekday())
+                        if completed_week_start_utc == week_start_utc:
+                            completed += 1
+                        else:
+                            in_progress += 1
                 elif period == "month":
-                    month_start = today.replace(day=1)
-                    completed_month_start = completed_date.replace(day=1)
-                    if completed_month_start == month_start:
-                        completed += 1
+                    # Сравниваем с началом месяца в локальном времени пользователя
+                    if user_tz and now_user_tz:
+                        month_start_user_local = now_user_tz.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                        completed_month_start_user_local = completed_date_user_tz.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                        if completed_month_start_user_local.date() == month_start_user_local.date():
+                            completed += 1
+                        else:
+                            in_progress += 1
                     else:
-                        in_progress += 1
+                        # Fallback на UTC
+                        today_utc = normalize_date_to_utc_day(now_utc)
+                        month_start_utc = today_utc.replace(day=1)
+                        completed_month_start_utc = completed_date_user_local.replace(day=1)
+                        if completed_month_start_utc == month_start_utc:
+                            completed += 1
+                        else:
+                            in_progress += 1
             # Невыполненные задачи
             else:
-                # Нормализуем дату создания в UTC (timezone-aware)
-                task_created_day = normalize_date_to_utc_day(task_created)
+                # Проверяем, попадает ли дата создания в период (по UTC, так как created_at уже в UTC)
+                task_created_utc = normalize_to_utc(task_created)
                 
-                if task_created_day and since and task_created_day >= since:
-                    # Задача создана в этом периоде и не выполнена - в процессе
-                    in_progress += 1
-                elif task_created_day and since and task_created_day < since:
-                    # Задача создана до периода и не выполнена - предстоящая
-                    upcoming += 1
+                if task_created_utc and period_start_utc and period_end_utc:
+                    # Задача создана в этом периоде (по UTC, который соответствует локальному времени пользователя)
+                    if period_start_utc <= task_created_utc < period_end_utc:
+                        # Задача создана в этом периоде и не выполнена - в процессе
+                        in_progress += 1
+                    elif task_created_utc < period_start_utc:
+                        # Задача создана до периода и не выполнена - предстоящая
+                        upcoming += 1
     
     return {
         "period": period,
