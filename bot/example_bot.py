@@ -12,22 +12,32 @@ import logging
 from notifications import send_evening_notifications, send_morning_notifications
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Отключаем лишние логи от aiogram и apscheduler
+logging.getLogger('aiogram').setLevel(logging.WARNING)
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
+logging.getLogger('aiogram.dispatcher').setLevel(logging.WARNING)
+logging.getLogger('aiogram.bot').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()  # Убираем пробелы если они есть
 
 if not BOT_TOKEN:
-    print("ERROR: BOT_TOKEN environment variable is not set!")
-    print("Please set it like: set BOT_TOKEN=your_bot_token_here")
+    logger.error("❌ BOT_TOKEN не установлен в переменных окружения!")
     exit(1)
 
-print(f"Using bot token: {BOT_TOKEN[:10]}...")
+logger.info(f"🤖 Bot token: {BOT_TOKEN[:10]}...")
 if WEBAPP_URL:
-    print(f"WebApp URL: {WEBAPP_URL}")
+    logger.info(f"🌐 WebApp URL: {WEBAPP_URL}")
 else:
-    print("WARNING: WEBAPP_URL is not set!")
+    logger.warning("⚠️  WEBAPP_URL is not set!")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher(bot)
@@ -129,20 +139,20 @@ async def on_startup(_):
     )
     
     scheduler.start()
-    logger.info("✅ Notification scheduler started")
-    logger.info("📅 Evening notifications will run at 22:00 user time")
-    logger.info("📅 Morning notifications will run at 9:00 user time")
+    logger.info("✅ Планировщик уведомлений запущен")
+    logger.info("   📅 Вечерние уведомления: 22:00 (по времени пользователя)")
+    logger.info("   📅 Утренние уведомления: 9:00 (по времени пользователя)")
 
 
 async def on_shutdown(_):
     """Вызывается при остановке бота"""
-    logger.info("Stopping scheduler...")
+    logger.info("🛑 Остановка планировщика...")
     scheduler.shutdown(wait=True)
-    logger.info("✅ Scheduler stopped")
+    logger.info("✅ Планировщик остановлен")
 
 
 if __name__ == "__main__":
-    print("Starting bot...")
+    logger.info("🚀 Запуск бота...")
     
     # Создаем event loop если его нет
     try:
@@ -160,10 +170,10 @@ if __name__ == "__main__":
             on_shutdown=on_shutdown
         )
     except KeyboardInterrupt:
-        logger.info("Stopping bot...")
+        logger.info("🛑 Остановка бота...")
         if scheduler.running:
             scheduler.shutdown(wait=True)
-        logger.info("✅ Bot stopped")
+        logger.info("✅ Бот остановлен")
 
 
 

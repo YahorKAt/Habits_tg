@@ -201,7 +201,6 @@ def list_tasks_with_subtasks(db: Session, user_id: int, selected_date: datetime 
     is_past_date = check_is_past_date(selected_day, today)
     
     # Логирование для отладки
-    logger.debug(f"Filtering tasks: selected_day={selected_day}, today={today}, is_past_date={is_past_date}")
     
     # Получаем все задачи пользователя (удаленные задачи уже удалены из БД)
     stmt = select(models.Task).where(models.Task.user_id == user_id)
@@ -847,14 +846,9 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
     target_date_start = target_date
     target_date_end = target_date + timedelta(days=1)
     
-    # Логируем дату: если is_user_timezone_start, показываем что это начало дня в часовом поясе пользователя
-    if is_user_timezone_start:
-        logger.info(f"🔄 Generating tasks for user timezone day start: {target_date} UTC (looking for tasks from {prev_date} UTC)")
-    else:
-        logger.info(f"🔄 Generating tasks for {target_date.date()}, looking for tasks from {prev_date.date()}")
+    # Логируем только важную информацию
     if user_id:
-        logger.info(f"   For user_id: {user_id}")
-    logger.info(f"   Date range: {prev_date_start} <= created_at < {prev_date_end}")
+        logger.debug(f"Генерация задач для пользователя {user_id}, дата: {target_date.date()}")
     
     created_count = 0
     
@@ -869,10 +863,8 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
         ).scalars().all()
     
     if not all_user_ids:
-        logger.info("⚠️ No users with tasks found")
+        logger.debug("Пользователи с задачами не найдены")
         return 0
-    
-    logger.info(f"📋 Found {len(all_user_ids)} users with tasks")
     
     for user_id in all_user_ids:
         # Ищем все задачи предыдущего дня
@@ -889,10 +881,8 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
         ).unique().scalars().all()
         
         if len(source_tasks) == 0:
-            logger.info(f"  User {user_id}: No tasks found from {prev_date.date()}")
+            logger.debug(f"Пользователь {user_id}: задачи не найдены за {prev_date.date()}")
             continue
-        
-        logger.info(f"  User {user_id}: Found {len(source_tasks)} tasks from {prev_date.date()}")
         
         # Для каждой найденной задачи создаем новую задачу
         for source_task in source_tasks:
@@ -915,7 +905,6 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
             ).scalar_one_or_none()
             
             if existing_task:
-                logger.debug(f"    Task '{source_task.title}' already exists for {target_date.date()}, skipping")
                 continue  # Задача уже создана для этого дня
             
             # Определяем стрик на основе предыдущей задачи:
@@ -926,8 +915,6 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
                 # Задача была выполнена 9 ноября, увеличиваем стрик для задачи 10 ноября
                 new_streak = source_task.streak + 1
 
-            else:
-                logger.debug(f"    Task '{source_task.title}' was not completed, streak reset to 0")
             
             # Создаем новую независимую задачу
             new_task = models.Task(
@@ -964,12 +951,10 @@ def generate_daily_tasks(db: Session, target_date: datetime = None, user_id: Opt
                 db.add(new_subtask)
                 subtasks_count += 1
             
-            if subtasks_count > 0:
-                logger.debug(f"Created {subtasks_count} subtasks for task {new_task.id}")
     
     if created_count > 0:
         db.commit()
-        logger.info(f"✅ Created {created_count} tasks for {target_date.date()}")
+        logger.debug(f"Создано {created_count} задач за {target_date.date()}")
     
     return created_count
 

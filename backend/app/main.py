@@ -58,7 +58,16 @@ def get_client_timezone(header_client_time: str = Header(None, alias="X-Client-T
     return None
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Отключаем лишние логи от uvicorn и других библиотек
+logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
+logging.getLogger('uvicorn.error').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Создаем планировщик задач
@@ -192,16 +201,16 @@ def generate_tasks_job():
                     count = crud.generate_daily_tasks(db, user_day_start_utc, user_id=user.user_id, is_user_timezone_start=True)
                     total_created += count
                     if count > 0:
-                        logger.info(f"🔄 Generated {count} tasks for user {user.user_id} (timezone {user.timezone_offset}, local date: {user_day_start.date()})")
+                        logger.info(f"✅ Создано {count} задач для пользователя {user.user_id} (часовой пояс {user.timezone_offset})")
                     
             except Exception as e:
-                logger.error(f"❌ Error generating tasks for user {user.user_id}: {e}", exc_info=True)
+                logger.error(f"❌ Ошибка генерации задач для пользователя {user.user_id}: {e}")
                 continue
         
         if total_created > 0:
-            logger.info(f"🔄 Total: Generated {total_created} tasks for all users at their local midnight")
+            logger.info(f"📋 Всего создано {total_created} задач для {len(users)} пользователей")
         else:
-            logger.debug(f"⏭️  No tasks generated (checked {len(users)} users, none at local midnight)")
+            logger.debug(f"⏭️  Задачи не созданы (проверено {len(users)} пользователей)")
             
     except Exception as e:
         logger.error(f"❌ Error in scheduled task generation: {e}", exc_info=True)
@@ -212,7 +221,7 @@ def generate_tasks_job():
 @app.on_event("startup")
 def on_startup() -> None:
     try:
-        logger.info("🚀 Starting up application...")
+        logger.info("🚀 Запуск приложения...")
         init_db()
         
         # Настраиваем планировщик для генерации задач каждый час
@@ -225,8 +234,8 @@ def on_startup() -> None:
             replace_existing=True
         )
         scheduler.start()
-        logger.info("✅ Scheduler started - tasks will be generated at 00:00 for each user's local timezone")
-        logger.info("✅ Application started successfully")
+        logger.info("✅ Планировщик запущен - задачи создаются в 00:00 по локальному времени каждого пользователя")
+        logger.info("✅ Приложение успешно запущено")
     except Exception as e:
         logger.error(f"❌ Failed to start application: {e}", exc_info=True)
         raise
@@ -237,25 +246,21 @@ def on_shutdown() -> None:
     """Останавливаем планировщик при выключении приложения"""
     if scheduler.running:
         scheduler.shutdown()
-        logger.info("✅ Scheduler stopped")
+        logger.info("✅ Планировщик остановлен")
 
 
 def get_user_id(x_telegram_init_data: str | None = Header(default=None)) -> int:
     if not x_telegram_init_data:
-        logger.warning("Missing X-Telegram-Init-Data header")
+        logger.debug("Отсутствует заголовок X-Telegram-Init-Data")
         raise HTTPException(status_code=401, detail="Missing Telegram init data")
-    
-    logger.info(f"Received X-Telegram-Init-Data header, length: {len(x_telegram_init_data) if x_telegram_init_data else 0}")
     
     user = parse_and_validate_init_data(x_telegram_init_data)
     if not user or "id" not in user:
-        logger.error(f"Failed to validate init_data. Header present: {bool(x_telegram_init_data)}")
-        logger.error(f"Header length: {len(x_telegram_init_data) if x_telegram_init_data else 0}")
-        logger.error(f"BOT_TOKEN from env: {'SET' if os.getenv('BOT_TOKEN') else 'NOT SET'}")
+        logger.warning("Не удалось валидировать Telegram auth данные")
         raise HTTPException(status_code=401, detail="Invalid Telegram auth")
     
     user_id = int(user["id"])
-    logger.info(f"Successfully authenticated user_id: {user_id}")
+    logger.debug(f"Пользователь аутентифицирован: user_id={user_id}")
     return user_id
 
 
@@ -339,7 +344,6 @@ def run_migrations_endpoint(db: Session = Depends(get_db)) -> JSONResponse:
 @app.post("/task")
 def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
     try:
-        logger.info(f"Creating task: title={payload.title}, category={payload.category}, frequency={payload.frequency}")
         task = crud.create_task(
             db, 
             user_id=user_id, 
@@ -351,7 +355,7 @@ def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = 
             category=payload.category,
             frequency=payload.frequency
         )
-        logger.info(f"Task created successfully with id={task.id}")
+        logger.debug(f"Создана задача: id={task.id}, title={payload.title[:30]}")
         return task
     except Exception as e:
         logger.error(f"Error creating task: {e}", exc_info=True)

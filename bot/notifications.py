@@ -15,10 +15,10 @@ async def send_notification(bot: Bot, user_id: int, message: str):
     """Отправляет уведомление пользователю"""
     try:
         await bot.send_message(chat_id=user_id, text=message)
-        logger.info(f"✅ Sent notification to user {user_id}: {message[:50]}...")
+        logger.debug(f"📤 Уведомление отправлено пользователю {user_id}")
     except Exception as e:
         # Пользователь мог заблокировать бота или удалить чат
-        logger.warning(f"⚠️ Failed to send notification to user {user_id}: {e}")
+        logger.debug(f"⚠️  Не удалось отправить уведомление пользователю {user_id}: {str(e)[:50]}")
 
 
 def parse_timezone_offset(offset_str: str) -> float:
@@ -37,27 +37,23 @@ async def send_notifications_job(bot: Bot, target_hour: int, message: str):
     try:
         # Получаем текущее время в UTC
         now_utc = datetime.now(timezone.utc)
-        logger.info(f"🕐 Running notifications job at {now_utc.strftime('%Y-%m-%d %H:%M:%S UTC')} for target hour {target_hour}:00")
         
         # Получаем всех пользователей
         try:
             users = get_all_users_with_timezone()
         except Exception as db_error:
-            logger.error(f"❌ Database error when getting users: {db_error}", exc_info=True)
+            logger.error(f"❌ Ошибка базы данных при получении пользователей: {db_error}")
             return
         
         if not users:
-            logger.warning("⚠️ No users found for notifications")
+            logger.debug("⏭️  Пользователи не найдены")
             return
-        
-        logger.info(f"👥 Found {len(users)} users to check")
         
         sent_count = 0
         checked_count = 0
         
         for user in users:
             if not user.timezone_offset:
-                logger.debug(f"⏭️  User {user.user_id} has no timezone_offset, skipping")
                 continue
             
             try:
@@ -71,28 +67,23 @@ async def send_notifications_job(bot: Bot, target_hour: int, message: str):
                 user_minute = now_user_tz.minute
                 checked_count += 1
                 
-                logger.debug(f"👤 User {user.user_id}: timezone={user.timezone_offset}, local time={now_user_tz.strftime('%H:%M')}, hour={user_hour}")
-                
                 # Проверяем, что наступило нужное время (в пределах первых 5 минут часа)
-                # Это позволяет отправлять уведомления даже если задача запустилась с небольшой задержкой
                 if user_hour == target_hour and user_minute < 5:
-                    logger.info(f"✅ Sending notification to user {user.user_id} (local time: {now_user_tz.strftime('%H:%M')})")
                     await send_notification(bot, user.user_id, message)
                     sent_count += 1
-                elif user_hour == target_hour:
-                    logger.debug(f"⏭️  User {user.user_id} is at {target_hour}:{user_minute:02d}, but minute > 5, skipping")
                     
             except Exception as e:
-                logger.error(f"❌ Error processing user {user.user_id} for notifications: {e}", exc_info=True)
+                logger.error(f"❌ Ошибка обработки пользователя {user.user_id}: {e}")
                 continue
         
         if sent_count > 0:
-            logger.info(f"📨 Sent {sent_count} notifications out of {checked_count} checked users ({message[:30]}...)")
+            time_label = "утренние" if target_hour == 9 else "вечерние"
+            logger.info(f"📨 Отправлено {sent_count} {time_label} уведомлений (проверено {checked_count} пользователей)")
         else:
-            logger.info(f"⏭️  No notifications sent (checked {checked_count} users, none at {target_hour}:00-{target_hour}:05)")
+            logger.debug(f"⏭️  Уведомления не отправлены (проверено {checked_count} пользователей, ни у кого не {target_hour}:00)")
             
     except Exception as e:
-        logger.error(f"❌ Error in notifications job: {e}", exc_info=True)
+        logger.error(f"❌ Ошибка в задаче уведомлений: {e}")
 
 
 async def send_evening_notifications(bot: Bot):
