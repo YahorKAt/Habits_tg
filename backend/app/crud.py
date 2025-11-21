@@ -11,13 +11,13 @@ from .utils.date_utils import (
     normalize_to_utc,
     get_today_utc,
     normalize_date_to_utc_day,
-    get_date_range_for_day,
     is_past_date as check_is_past_date
 )
 
 logger = logging.getLogger(__name__)
 
 # Функции для работы с пользователями и часовыми поясами
+
 def update_user_timezone(db: Session, user_id: int, timezone_offset: str):
     """Обновляет или создает запись о часовом поясе пользователя"""
     from datetime import timezone as tz
@@ -29,7 +29,7 @@ def update_user_timezone(db: Session, user_id: int, timezone_offset: str):
         user = models.User(user_id=user_id, timezone_offset=timezone_offset)
         db.add(user)
     
-    db.commit()
+    db.commit() 
     db.refresh(user)
     return user
 

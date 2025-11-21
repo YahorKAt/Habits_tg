@@ -1547,6 +1547,97 @@ function JournalPage() {
   )
 }
 
+// Компонент загрузочного экрана
+function LoadingScreen({ progress = 0 }) {
+  return (
+    <div className="fixed inset-0 bg-gray-50 flex flex-col items-center justify-center z-50">
+      <div className="w-full max-w-sm px-8">
+        {/* Иконка бегущего человека */}
+        <div className="flex justify-center mb-8 relative">
+          <svg
+            width="80"
+            height="80"
+            viewBox="0 0 100 100"
+            className="text-yellow-500"
+            style={{
+              animation: 'bounce 1s ease-in-out infinite'
+            }}
+          >
+            {/* Голова */}
+            <circle cx="50" cy="18" r="9" fill="currentColor" />
+            {/* Тело */}
+            <rect x="47" y="27" width="6" height="18" rx="3" fill="currentColor" />
+            {/* Левая рука (поднята вверх и согнута) */}
+            <path
+              d="M47 32 L42 25 L40 28 L45 35"
+              fill="currentColor"
+            />
+            {/* Правая рука (поднята вверх и согнута) */}
+            <path
+              d="M53 32 L58 25 L60 28 L55 35"
+              fill="currentColor"
+            />
+            {/* Левая нога (в движении вперед) */}
+            <path
+              d="M47 45 L44 58 L42 62 L46 60"
+              fill="currentColor"
+            />
+            {/* Правая нога (в движении назад) */}
+            <path
+              d="M53 45 L56 58 L58 62 L54 60"
+              fill="currentColor"
+            />
+          </svg>
+        </div>
+
+        {/* Прогресс-бар */}
+        <div className="relative w-full h-4 bg-gray-200 rounded-full overflow-hidden shadow-lg mb-4" style={{
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.5)'
+        }}>
+          {/* Тень под прогресс-баром */}
+          <div className="absolute inset-0 bg-gray-300 rounded-full transform translate-x-1 translate-y-1 opacity-30"></div>
+
+          {/* Заполненная часть */}
+          <div
+            className="absolute left-0 top-0 h-full bg-yellow-500 rounded-full transition-all duration-300 ease-out"
+            style={{ width: `${progress}%` }}
+          >
+            {/* Сегменты прогресс-бара */}
+            <div className="h-full flex">
+              {Array.from({ length: 10 }, (_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 border-r border-yellow-400/50 last:border-r-0"
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Незаполненная часть */}
+          <div
+            className="absolute right-0 top-0 h-full bg-gray-300 rounded-full"
+            style={{ width: `${100 - progress}%` }}
+          >
+            <div className="h-full flex">
+              {Array.from({ length: 10 }, (_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 border-r border-gray-400/50 last:border-r-0"
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Текст */}
+        <p className="text-center text-gray-600 text-sm font-medium uppercase tracking-wide">
+          I'M MAKING PROGRESS...
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // Нижняя навигация
 function BottomNavigation({ active, onNavigate }) {
   return (
@@ -1589,12 +1680,68 @@ function BottomNavigation({ active, onNavigate }) {
 // Главный компонент приложения
 export default function App() {
   const tg = useTelegram()
+  const initData = useInitData()
   const [route, setRoute] = useState('tasks')
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
   const [showCreateSubtask, setShowCreateSubtask] = useState(false)
   const [parentTaskForSubtask, setParentTaskForSubtask] = useState(null)
   const [editingSubtask, setEditingSubtask] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+
+  const api = useMemo(() => createApiClient(initData), [initData])
+
+  // Загрузка всех данных при старте приложения
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        setIsLoading(true)
+        setLoadingProgress(0)
+
+        // Загружаем данные последовательно для плавного обновления прогресса
+        try {
+          // 1. Задачи для сегодня (40%)
+          const dateStr = formatDateForAPI(new Date())
+          await api(`/tasks?date=${dateStr}`)
+          setLoadingProgress(40)
+        } catch (error) {
+          console.error('Error loading tasks:', error)
+        }
+
+        try {
+          // 2. Статистика (30%)
+          await api('/stats?period=day')
+          setLoadingProgress(70)
+        } catch (error) {
+          console.error('Error loading stats:', error)
+        }
+
+        try {
+          // 3. Привычки (30%)
+          await api('/habits')
+          setLoadingProgress(100)
+        } catch (error) {
+          console.error('Error loading habits:', error)
+        }
+
+        // Небольшая задержка для плавности анимации прогресс-бара
+        await new Promise(resolve => setTimeout(resolve, 200))
+
+        setIsLoading(false)
+      } catch (error) {
+        console.error('Error loading initial data:', error)
+        setIsLoading(false)
+      }
+    }
+
+    if (initData) {
+      loadInitialData()
+    } else {
+      // Если нет initData, все равно скрываем загрузку через небольшую задержку
+      setTimeout(() => setIsLoading(false), 500)
+    }
+  }, [api, initData])
 
   useEffect(() => {
     // В DEV режиме может не быть Telegram WebApp
@@ -1656,6 +1803,11 @@ export default function App() {
     setShowCreateSubtask(false)
     setParentTaskForSubtask(null)
     setEditingSubtask(null)
+  }
+
+  // Показываем загрузочный экран пока данные не загружены
+  if (isLoading) {
+    return <LoadingScreen progress={loadingProgress} />
   }
 
   if (showCreateSubtask) {
