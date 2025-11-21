@@ -116,7 +116,7 @@ class TelegramAuthenticator:
 def parse_and_validate_init_data(init_data_raw: str) -> typing.Optional[typing.Dict[str, typing.Any]]:
     bot_token = os.getenv("BOT_TOKEN", "").strip()
     if not bot_token:
-        logger.error("BOT_TOKEN not found")
+        logger.error("BOT_TOKEN не найден")
         return None
 
     try:
@@ -156,11 +156,11 @@ def parse_and_validate_init_data(init_data_raw: str) -> typing.Optional[typing.D
 
         return user_dict
     except ExpiredInitDataError:
-        logger.warning("Telegram init data expired")
+        logger.warning("Данные Telegram истекли")
         return None
     except InvalidInitDataError as e:
-        logger.error(f"Invalid Telegram init data: {e}")
+        logger.error(f"Неверные данные Telegram: {e}")
         return None
     except Exception as e:
-        logger.error(f"Validation error: {e}", exc_info=True)
+        logger.error(f"Ошибка валидации: {e}")
         return None

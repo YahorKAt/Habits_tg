@@ -38,7 +38,7 @@ def get_client_time(header_client_time: str = Header(None, alias="X-Client-Time"
             # Если timezone нет, считаем что это уже UTC
             return client_time
         except (ValueError, AttributeError) as e:
-            logger.warning(f"Failed to parse client time: {e}")
+            logger.debug(f"Не удалось распарсить время клиента: {e}")
             pass
     # Если заголовок не передан или невалидный - используем UTC
     return datetime.now(timezone.utc)
@@ -67,6 +67,10 @@ logging.basicConfig(
 # Отключаем лишние логи от uvicorn и других библиотек
 logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
 logging.getLogger('uvicorn.error').setLevel(logging.WARNING)
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
+logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING)
+logging.getLogger('apscheduler.executors').setLevel(logging.WARNING)
+logging.getLogger('apscheduler.jobstores').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -118,13 +122,13 @@ class TimezoneMiddleware(BaseHTTPMiddleware):
                                     try:
                                         crud.update_user_timezone(db, user_id, offset_formatted)
                                     except Exception as e:
-                                        logger.debug(f"Could not save timezone for user {user_id}: {e}")
+                                        logger.debug(f"Не удалось сохранить часовой пояс для пользователя {user_id}: {e}")
                                     finally:
                                         db.close()
                         except (ValueError, AttributeError) as e:
-                            logger.debug(f"Could not parse client time: {e}")
+                            logger.debug(f"Не удалось распарсить время клиента: {e}")
             except Exception as e:
-                logger.debug(f"Could not save timezone: {e}")
+                logger.debug(f"Не удалось сохранить часовой пояс: {e}")
         
         return response
 
@@ -165,7 +169,7 @@ def generate_tasks_job():
                 users_dict[user_id] = temp_user
         
         if not users:
-            logger.debug("No users found")
+            logger.debug("Пользователи не найдены")
             db.close()
             return
         
@@ -213,7 +217,7 @@ def generate_tasks_job():
             logger.debug(f"⏭️  Задачи не созданы (проверено {len(users)} пользователей)")
             
     except Exception as e:
-        logger.error(f"❌ Error in scheduled task generation: {e}", exc_info=True)
+        logger.error(f"❌ Ошибка в задаче генерации задач: {e}")
     finally:
         db.close()
 
@@ -230,14 +234,14 @@ def on_startup() -> None:
             generate_tasks_job,
             trigger=CronTrigger(minute=0),  # Каждый час в 00 минут
             id='generate_daily_tasks',
-            name='Generate daily tasks at midnight for each user timezone',
+            name='Генерация ежедневных задач в полночь для каждого пользователя',
             replace_existing=True
         )
         scheduler.start()
         logger.info("✅ Планировщик запущен - задачи создаются в 00:00 по локальному времени каждого пользователя")
         logger.info("✅ Приложение успешно запущено")
     except Exception as e:
-        logger.error(f"❌ Failed to start application: {e}", exc_info=True)
+        logger.error(f"❌ Не удалось запустить приложение: {e}")
         raise
 
 
@@ -286,7 +290,7 @@ def health_db(db: Session = Depends(get_db)) -> JSONResponse:
             "database": "connected"
         })
     except Exception as e:
-        logger.error(f"Database health check failed: {e}", exc_info=True)
+        logger.error(f"Ошибка проверки базы данных: {e}")
         return JSONResponse({
             "status": "error",
             "database": "disconnected",
@@ -334,7 +338,7 @@ def run_migrations_endpoint(db: Session = Depends(get_db)) -> JSONResponse:
             "message": "Migrations applied successfully"
         })
     except Exception as e:
-        logger.error(f"Migration failed: {e}", exc_info=True)
+        logger.error(f"Ошибка миграции: {e}")
         return JSONResponse({
             "status": "error",
             "message": str(e)
@@ -358,7 +362,7 @@ def add_task(payload: TaskCreate, db: Session = Depends(get_db), user_id: int = 
         logger.debug(f"Создана задача: id={task.id}, title={payload.title[:30]}")
         return task
     except Exception as e:
-        logger.error(f"Error creating task: {e}", exc_info=True)
+        logger.error(f"Ошибка создания задачи: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 
@@ -485,7 +489,7 @@ def list_tasks(
         
         return crud.list_tasks_with_subtasks(db, user_id=user_id, selected_date=selected_date, current_time=client_time)
     except Exception as e:
-        logger.error(f"Error in list_tasks: {e}", exc_info=True)
+        logger.error(f"Ошибка получения списка задач: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
 
 
@@ -503,7 +507,7 @@ def generate_today_tasks(
     try:
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         count = crud.generate_daily_tasks(db, today)
-        logger.info(f"Manual generation: Created {count} tasks for {today.date()}")
+        logger.info(f"Ручная генерация: создано {count} задач за {today.date()}")
         return {
             "ok": True,
             "date": today.isoformat(),
@@ -511,7 +515,7 @@ def generate_today_tasks(
             "message": f"Created {count} tasks for {today.date()}"
         }
     except Exception as e:
-        logger.error(f"Error in manual task generation: {e}", exc_info=True)
+        logger.error(f"Ошибка ручной генерации задач: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate tasks: {str(e)}")
 
 

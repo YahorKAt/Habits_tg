@@ -530,7 +530,7 @@ def get_stats(db: Session, user_id: int, period: str):
             user_tz = timezone(timedelta(hours=offset_hours))
             now_user_tz = now_utc.astimezone(user_tz)
         except Exception as e:
-            logger.warning(f"Could not parse timezone {user_timezone_offset} for user {user_id}: {e}, using UTC")
+            logger.warning(f"Не удалось распарсить часовой пояс {user_timezone_offset} для пользователя {user_id}: {e}, используется UTC")
             user_tz = None
     
     if user_tz and now_user_tz:

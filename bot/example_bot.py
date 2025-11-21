@@ -140,8 +140,7 @@ async def on_startup(_):
     
     scheduler.start()
     logger.info("✅ Планировщик уведомлений запущен")
-    logger.info("   📅 Вечерние уведомления: 22:00 (по времени пользователя)")
-    logger.info("   📅 Утренние уведомления: 9:00 (по времени пользователя)")
+    
 
 
 async def on_shutdown(_):

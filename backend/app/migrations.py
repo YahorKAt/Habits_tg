@@ -17,10 +17,9 @@ def column_exists(table_name: str, column_name: str, db: Session) -> bool:
         inspector = inspect(db.bind)
         columns = [col['name'] for col in inspector.get_columns(table_name)]
         exists = column_name in columns
-        logger.debug(f"Column {table_name}.{column_name} exists check: {exists}")
         return exists
     except Exception as e:
-        logger.warning(f"Could not inspect table {table_name} using inspector: {e}")
+        logger.debug(f"Не удалось проверить таблицу {table_name} через inspector: {e}")
         # Fallback: проверяем через SQL запрос
         try:
             if db.bind.dialect.name == 'sqlite':
@@ -33,10 +32,9 @@ def column_exists(table_name: str, column_name: str, db: Session) -> bool:
                 ), {"table_name": table_name, "column_name": column_name})
                 columns = [row[0] for row in result.fetchall()]
             exists = len(columns) > 0
-            logger.debug(f"Column {table_name}.{column_name} exists check (fallback): {exists}")
             return exists
         except Exception as e2:
-            logger.error(f"Fallback column check failed: {e2}")
+            logger.error(f"Ошибка проверки колонки (fallback): {e2}")
             # Если не можем проверить, предполагаем что колонка не существует
             return False
 
@@ -52,11 +50,11 @@ def migrate_all(db: Session):
             logger.info("⏭️  Таблица 'tasks' не существует, миграции будут применены при создании таблиц")
             return
         
-        logger.info(f"🔍 Проверка миграций для таблицы 'tasks'...")
+        logger.info("🔍 Проверка миграций...")
         
         # Миграция 1: Добавление поля streak
         if not column_exists('tasks', 'streak', db):
-            logger.info("🔄 Миграция 1: Добавление поля 'streak' в таблицу tasks...")
+            logger.info("🔄 Добавление поля 'streak'...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     db.execute(text("ALTER TABLE tasks ADD COLUMN streak INTEGER NOT NULL DEFAULT 0"))
@@ -73,11 +71,11 @@ def migrate_all(db: Session):
                 else:
                     raise
         else:
-            logger.info("⏭️  Поле 'streak' уже существует, пропускаем")
+            logger.debug("⏭️  Поле 'streak' уже существует")
         
         # Миграция 2: Добавление полей deleted и deleted_at
         if not column_exists('tasks', 'deleted', db):
-            logger.info("🔄 Миграция 2: Добавление полей 'deleted' и 'deleted_at' в таблицу tasks...")
+            logger.info("🔄 Добавление полей 'deleted' и 'deleted_at'...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     db.execute(text("ALTER TABLE tasks ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"))
@@ -96,11 +94,11 @@ def migrate_all(db: Session):
                 else:
                     raise
         else:
-            logger.info("⏭️  Поля 'deleted' и 'deleted_at' уже существуют, пропускаем")
+            logger.debug("⏭️  Поля 'deleted' и 'deleted_at' уже существуют")
         
         # Миграция 3: Удаление поля repeat_type (заменено на frequency)
         if column_exists('tasks', 'repeat_type', db):
-            logger.info("🔄 Миграция 3: Удаление поля 'repeat_type' из таблицы tasks...")
+            logger.info("🔄 Удаление поля 'repeat_type'...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     # SQLite не поддерживает DROP COLUMN напрямую, нужно пересоздать таблицу
@@ -116,11 +114,11 @@ def migrate_all(db: Session):
                 # Не прерываем выполнение, поле просто останется неиспользуемым
                 logger.info("⚠️  Поле 'repeat_type' останется в таблице, но не будет использоваться")
         else:
-            logger.info("⏭️  Поле 'repeat_type' уже удалено, пропускаем")
+            logger.debug("⏭️  Поле 'repeat_type' уже удалено")
         
         # Миграция 4: Удаление неиспользуемых полей parent_task_id и deleted_at
         if column_exists('tasks', 'parent_task_id', db):
-            logger.info("🔄 Миграция 4: Удаление неиспользуемого поля 'parent_task_id' из таблицы tasks...")
+            logger.info("🔄 Удаление поля 'parent_task_id'...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     # SQLite не поддерживает DROP COLUMN напрямую, нужно пересоздать таблицу
@@ -144,10 +142,10 @@ def migrate_all(db: Session):
                 db.rollback()
                 logger.info("⚠️  Поле 'parent_task_id' останется в таблице, но не будет использоваться")
         else:
-            logger.info("⏭️  Поле 'parent_task_id' уже удалено, пропускаем")
+            logger.debug("⏭️  Поле 'parent_task_id' уже удалено")
         
         if column_exists('tasks', 'deleted_at', db):
-            logger.info("🔄 Миграция 5: Удаление неиспользуемого поля 'deleted_at' из таблицы tasks...")
+            logger.info("🔄 Удаление поля 'deleted_at'...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     # SQLite не поддерживает DROP COLUMN напрямую, нужно пересоздать таблицу
@@ -162,11 +160,11 @@ def migrate_all(db: Session):
                 db.rollback()
                 logger.info("⚠️  Поле 'deleted_at' останется в таблице, но не будет использоваться")
         else:
-            logger.info("⏭️  Поле 'deleted_at' уже удалено, пропускаем")
+            logger.debug("⏭️  Поле 'deleted_at' уже удалено")
         
         # Миграция 6: Создание таблицы users для хранения часовых поясов
         if 'users' not in tables:
-            logger.info("🔄 Миграция 6: Создание таблицы 'users' для хранения часовых поясов...")
+            logger.info("🔄 Создание таблицы 'users'...")
             try:
                 if db.bind.dialect.name == 'sqlite':
                     db.execute(text("""
@@ -201,12 +199,12 @@ def migrate_all(db: Session):
                 else:
                     raise
         else:
-            logger.info("⏭️  Таблица 'users' уже существует, пропускаем")
+            logger.debug("⏭️  Таблица 'users' уже существует")
         
-        logger.info("✅ Все миграции проверены и применены успешно")
+        logger.info("✅ Все миграции проверены")
         
     except Exception as e:
-        logger.error(f"❌ Ошибка при применении миграций: {e}", exc_info=True)
+        logger.error(f"❌ Ошибка при применении миграций: {e}")
         db.rollback()
         raise
 

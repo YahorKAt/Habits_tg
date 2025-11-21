@@ -14,14 +14,14 @@ if not DATABASE_URL:
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     db_path = os.path.join(backend_dir, "habits.db")
     DATABASE_URL = f"sqlite:///{db_path}"
-    logger.info(f"Using default database path: {db_path}")
+    logger.debug(f"Используется путь к БД по умолчанию: {db_path}")
 
-logger.info(f"Database URL: {DATABASE_URL}")
+logger.debug(f"URL базы данных: {DATABASE_URL[:50]}...")
 
 # Railway/Heroku используют postgres://, но SQLAlchemy требует postgresql://
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    logger.info(f"Fixed DATABASE_URL for PostgreSQL")
+    logger.debug("Исправлен DATABASE_URL для PostgreSQL")
 
 engine = create_engine(
     DATABASE_URL,
@@ -39,7 +39,7 @@ def init_db() -> None:
         # Создаем таблицы если их нет
         logger.info("🔧 Создание/проверка таблиц базы данных...")
         Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database tables created/verified")
+        logger.info("✅ Таблицы базы данных созданы/проверены")
         
         # Применяем миграции
         logger.info("🔧 Применение миграций базы данных...")
@@ -48,16 +48,16 @@ def init_db() -> None:
         try:
             migrations.migrate_all(db)
         except Exception as migration_error:
-            logger.error(f"❌ Ошибка при применении миграций: {migration_error}", exc_info=True)
+            logger.error(f"❌ Ошибка при применении миграций: {migration_error}")
             # Не прерываем запуск приложения, но логируем ошибку
             # Попробуем еще раз через несколько секунд
             raise
         finally:
             db.close()
             
-        logger.info("✅ Database initialized successfully")
+        logger.info("✅ База данных успешно инициализирована")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
+        logger.error(f"❌ Не удалось инициализировать базу данных: {e}")
         raise
 
 
@@ -69,7 +69,7 @@ def get_db() -> Session:
         db.execute(text("SELECT 1"))
         yield db
     except Exception as e:
-        logger.error(f"Database connection error: {e}", exc_info=True)
+        logger.error(f"Ошибка подключения к базе данных: {e}")
         db.rollback()
         raise
     finally:
