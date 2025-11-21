@@ -44,9 +44,10 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
 
     setLoading(true)
     try {
+      let result
       if (isEditing) {
         // Обновление существующей задачи
-        await api(`/task/${task.id}`, {
+        result = await api(`/task/${task.id}`, {
           method: 'PUT',
           body: JSON.stringify({
             title: title.trim(),
@@ -55,9 +56,11 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
             frequency: frequency,
           })
         })
+        // Передаем обновленную задачу для обновления только её в списке
+        onTaskCreated(result, true) // true = это редактирование
       } else {
         // Создание новой задачи
-        await api('/task', {
+        result = await api('/task', {
           method: 'POST',
           body: JSON.stringify({
             title: title.trim(),
@@ -66,13 +69,13 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
             frequency: frequency,
           })
         })
+        // При создании новой задачи обновляем весь список
+        onTaskCreated(result, false) // false = это создание
       }
 
       invalidateCache('/tasks') // Инвалидируем кэш задач
       invalidateCache('/stats') // Инвалидируем кэш статистики
       invalidateCache('/habits') // Инвалидируем кэш привычек
-
-      onTaskCreated()
     } catch (error) {
       console.error(`Error ${isEditing ? 'updating' : 'creating'} task:`, error)
       alert(`Ошибка при ${isEditing ? 'обновлении' : 'создании'} задачи`)
@@ -371,17 +374,42 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   // Перезагружаем задачи при монтировании компонента (ключ изменился)
   // Это обеспечит актуальный список после возврата со страницы редактирования
 
-  // Передаем функцию обновления наверх
+  // Функция для обновления одной задачи в списке
+  const updateTaskInList = useCallback((updatedTask) => {
+    const dateStr = formatDateForAPI(selectedDate)
+
+    // Обновляем задачу в локальном состоянии
+    setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t))
+
+    // Обновляем задачу в кэше
+    if (tasksCacheRef.current[dateStr]) {
+      tasksCacheRef.current[dateStr] = tasksCacheRef.current[dateStr].map(t =>
+        t.id === updatedTask.id ? updatedTask : t
+      )
+
+      // Обновляем кэш в родительском компоненте для сегодняшней даты
+      if (onTasksUpdate && dateStr === formatDateForAPI(new Date())) {
+        onTasksUpdate(tasksCacheRef.current[dateStr])
+      }
+    }
+  }, [selectedDate, onTasksUpdate])
+
+  // Передаем функции обновления наверх
   useEffect(() => {
     if (onTaskUpdated) {
-      onTaskUpdated(() => {
-        if (loadTasksRef.current) {
-          // Принудительно перезагружаем при обновлении
-          loadTasksRef.current(selectedDate, true)
+      onTaskUpdated((updatedTask) => {
+        // Если передана задача, обновляем только её
+        if (updatedTask) {
+          updateTaskInList(updatedTask)
+        } else {
+          // Иначе перезагружаем весь список
+          if (loadTasksRef.current) {
+            loadTasksRef.current(selectedDate, true)
+          }
         }
       })
     }
-  }, [onTaskUpdated, selectedDate])
+  }, [onTaskUpdated, selectedDate, updateTaskInList])
 
   // Мемоизируем обработчики для предотвращения лишних ререндеров
   const handleDateChange = useCallback((date) => {
@@ -553,6 +581,19 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       invalidateCache('/stats') // Инвалидируем кэш статистики
       invalidateCache('/habits') // Инвалидируем кэш привычек
 
+      // Обновляем только эту задачу в кэше
+      const dateStr = formatDateForAPI(selectedDate)
+      if (tasksCacheRef.current[dateStr]) {
+        tasksCacheRef.current[dateStr] = tasksCacheRef.current[dateStr].map(t =>
+          t.id === updated.id ? updated : t
+        )
+
+        // Обновляем кэш в родительском компоненте для сегодняшней даты
+        if (onTasksUpdate && dateStr === formatDateForAPI(new Date())) {
+          onTasksUpdate(tasksCacheRef.current[dateStr])
+        }
+      }
+
       // Если задача отменяется (completed стал false), отменяем все подзадачи на сервере
       if (!updated.completed) {
         // Используем актуальное состояние из tasks
@@ -580,12 +621,26 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
             // Проверяем актуальность перед обновлением
             const latestVersion = taskUpdateVersionsRef.current.get(task.id)
             if (latestVersion === updateVersion) {
+              const finalTask = { ...updated, subtasks: updatedSubtasks }
               setTasks(prevTasks => prevTasks.map(t => {
                 if (t.id === task.id) {
-                  return { ...updated, subtasks: updatedSubtasks }
+                  return finalTask
                 }
                 return t
               }))
+
+              // Обновляем кэш после обновления подзадач
+              const dateStrForCache = formatDateForAPI(selectedDate)
+              if (tasksCacheRef.current[dateStrForCache]) {
+                tasksCacheRef.current[dateStrForCache] = tasksCacheRef.current[dateStrForCache].map(t =>
+                  t.id === finalTask.id ? finalTask : t
+                )
+
+                // Обновляем кэш в родительском компоненте для сегодняшней даты
+                if (onTasksUpdate && dateStrForCache === formatDateForAPI(new Date())) {
+                  onTasksUpdate(tasksCacheRef.current[dateStrForCache])
+                }
+              }
             }
           })
 
@@ -712,6 +767,21 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
               st.id === subtask.id ? updated : st
             )
 
+            // Обновляем кэш после обновления подзадачи
+            const dateStr = formatDateForAPI(selectedDate)
+            const updatedTask = { ...t, subtasks: updatedSubtasks }
+
+            if (tasksCacheRef.current[dateStr]) {
+              tasksCacheRef.current[dateStr] = tasksCacheRef.current[dateStr].map(cachedTask =>
+                cachedTask.id === updatedTask.id ? updatedTask : cachedTask
+              )
+
+              // Обновляем кэш в родительском компоненте для сегодняшней даты
+              if (onTasksUpdate && dateStr === formatDateForAPI(new Date())) {
+                onTasksUpdate(tasksCacheRef.current[dateStr])
+              }
+            }
+
             // Проверяем, все ли подзадачи выполнены
             const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
 
@@ -722,14 +792,31 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                 // Проверяем актуальность перед обновлением
                 const latestVersion = subtaskUpdateVersionsRef.current.get(subtask.id)
                 if (latestVersion === updateVersion) {
-                  setTasks(prevTasks => prevTasks.map(task => {
-                    if (task.id === updatedTask.id) {
-                      // Используем актуальные подзадачи
-                      const currentTask = prevTasks.find(tt => tt.id === task.id)
-                      return { ...updatedTask, subtasks: currentTask?.subtasks || updatedSubtasks }
+                  setTasks(prevTasks => {
+                    const currentTask = prevTasks.find(tt => tt.id === updatedTask.id)
+                    const finalTask = { ...updatedTask, subtasks: currentTask?.subtasks || updatedSubtasks }
+                    const updatedTasks = prevTasks.map(task => {
+                      if (task.id === updatedTask.id) {
+                        return finalTask
+                      }
+                      return task
+                    })
+
+                    // Обновляем кэш после автоматического обновления задачи
+                    const dateStrForAutoComplete = formatDateForAPI(selectedDate)
+                    if (tasksCacheRef.current[dateStrForAutoComplete]) {
+                      tasksCacheRef.current[dateStrForAutoComplete] = tasksCacheRef.current[dateStrForAutoComplete].map(cachedTask =>
+                        cachedTask.id === finalTask.id ? finalTask : cachedTask
+                      )
+
+                      // Обновляем кэш в родительском компоненте для сегодняшней даты
+                      if (onTasksUpdate && dateStrForAutoComplete === formatDateForAPI(new Date())) {
+                        onTasksUpdate(tasksCacheRef.current[dateStrForAutoComplete])
+                      }
                     }
-                    return task
-                  }))
+
+                    return updatedTasks
+                  })
                 }
               }).catch(error => {
                 console.error('Error auto-completing task:', error)
@@ -742,14 +829,44 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                 // Проверяем актуальность перед обновлением
                 const latestVersion = subtaskUpdateVersionsRef.current.get(subtask.id)
                 if (latestVersion === updateVersion) {
-                  setTasks(prevTasks => prevTasks.map(task => {
-                    if (task.id === updatedTask.id) {
-                      // Используем актуальные подзадачи
-                      const currentTask = prevTasks.find(tt => tt.id === task.id)
-                      return { ...updatedTask, subtasks: currentTask?.subtasks || updatedSubtasks }
+                  setTasks(prevTasks => {
+                    const currentTask = prevTasks.find(tt => tt.id === updatedTask.id)
+                    const finalTask = { ...updatedTask, subtasks: currentTask?.subtasks || updatedSubtasks }
+                    const updatedTasks = prevTasks.map(task => {
+                      if (task.id === updatedTask.id) {
+                        return finalTask
+                      }
+                      return task
+                    })
+
+                    // Обновляем кэш после автоматического отмены задачи
+                    const dateStrForAutoUncomplete = formatDateForAPI(selectedDate)
+                    if (tasksCacheRef.current[dateStrForAutoUncomplete]) {
+                      tasksCacheRef.current[dateStrForAutoUncomplete] = tasksCacheRef.current[dateStrForAutoUncomplete].map(cachedTask =>
+                        cachedTask.id === finalTask.id ? finalTask : cachedTask
+                      )
+
+                      // Обновляем кэш в родительском компоненте для сегодняшней даты
+                      if (onTasksUpdate && dateStrForAutoUncomplete === formatDateForAPI(new Date())) {
+                        onTasksUpdate(tasksCacheRef.current[dateStrForAutoUncomplete])
+                      }
                     }
-                    return task
-                  }))
+
+                    return updatedTasks
+                  })
+
+                  // Обновляем кэш после автоматического отмены задачи
+                  const dateStrForAutoUncomplete = formatDateForAPI(selectedDate)
+                  if (tasksCacheRef.current[dateStrForAutoUncomplete]) {
+                    tasksCacheRef.current[dateStrForAutoUncomplete] = tasksCacheRef.current[dateStrForAutoUncomplete].map(cachedTask =>
+                      cachedTask.id === finalTask.id ? finalTask : cachedTask
+                    )
+
+                    // Обновляем кэш в родительском компоненте для сегодняшней даты
+                    if (onTasksUpdate && dateStrForAutoUncomplete === formatDateForAPI(new Date())) {
+                      onTasksUpdate(tasksCacheRef.current[dateStrForAutoUncomplete])
+                    }
+                  }
                 }
               }).catch(error => {
                 console.error('Error auto-uncompleting task:', error)
@@ -2186,12 +2303,20 @@ export default function App() {
   const taskUpdateCallbackRef = useRef(null)
   const [tasksPageKey, setTasksPageKey] = useState(0) // Ключ для принудительного обновления
 
-  const handleTaskCreated = () => {
+  const handleTaskCreated = (taskData, isEdit = false) => {
     setShowCreateTask(false)
     setEditingTask(null)
     setRoute('tasks')
-    // Принудительно обновляем страницу задач через изменение ключа
-    setTasksPageKey(prev => prev + 1)
+
+    if (isEdit) {
+      // При редактировании обновляем только эту задачу через колбэк
+      if (taskUpdateCallbackRef.current) {
+        taskUpdateCallbackRef.current(taskData)
+      }
+    } else {
+      // При создании новой задачи обновляем весь список через изменение ключа
+      setTasksPageKey(prev => prev + 1)
+    }
   }
 
   const handleBack = () => {
