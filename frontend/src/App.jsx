@@ -316,6 +316,8 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [selectedDate, setSelectedDate] = useState(new Date())
   const ribbonRef = useRef(null)
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
+  const taskUpdateVersionsRef = useRef(new Map()) // Отслеживаем версии обновлений задач для предотвращения race conditions
+  const subtaskUpdateVersionsRef = useRef(new Map()) // Отслеживаем версии обновлений подзадач
 
 
   const api = useMemo(() => createApiClient(initData), [initData])
@@ -484,18 +486,23 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       return
     }
 
+    // Создаем уникальную версию для этого обновления
+    const updateVersion = Date.now()
+    taskUpdateVersionsRef.current.set(task.id, updateVersion)
+
     // Оптимистичное обновление - сразу меняем состояние в UI
     const newCompletedState = !task.completed
-    const previousTask = { ...task }
 
-    // Мгновенно обновляем UI
+    // Мгновенно обновляем UI используя функциональное обновление
     setTasks(prev => prev.map(t => {
       if (t.id === task.id) {
-        const updatedTask = { ...t, completed: newCompletedState }
+        // Берем актуальное состояние из предыдущего состояния, а не из переданного task
+        const currentTask = t
+        const updatedTask = { ...currentTask, completed: newCompletedState }
 
         // Если задача отменяется, отменяем все подзадачи в UI
-        if (!newCompletedState && t.subtasks && t.subtasks.length > 0) {
-          updatedTask.subtasks = (t.subtasks || []).map(st => ({ ...st, completed: false }))
+        if (!newCompletedState && currentTask.subtasks && currentTask.subtasks.length > 0) {
+          updatedTask.subtasks = (currentTask.subtasks || []).map(st => ({ ...st, completed: false }))
         }
 
         return updatedTask
@@ -506,40 +513,61 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     // Затем синхронизируем с сервером
     try {
       const updated = await api(`/task/${task.id}/complete`, { method: 'POST' })
+
+      // Проверяем, не устарел ли этот ответ (было ли более новое обновление)
+      const currentVersion = taskUpdateVersionsRef.current.get(task.id)
+      if (currentVersion !== updateVersion) {
+        // Это устаревший ответ, игнорируем его
+        return
+      }
+
       invalidateCache('/tasks') // Инвалидируем кэш задач
       invalidateCache('/stats') // Инвалидируем кэш статистики
       invalidateCache('/habits') // Инвалидируем кэш привычек
 
       // Если задача отменяется (completed стал false), отменяем все подзадачи на сервере
-      if (!updated.completed && task.subtasks && task.subtasks.length > 0) {
-        // Отменяем все выполненные подзадачи в фоне
-        const uncompletedSubtasks = task.subtasks.map(async (subtask) => {
-          if (subtask.completed) {
-            try {
-              return await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
-            } catch (error) {
-              console.error(`Error uncompleting subtask ${subtask.id}:`, error)
-              return subtask
+      if (!updated.completed) {
+        // Используем актуальное состояние из tasks
+        setTasks(prev => {
+          const currentTask = prev.find(t => t.id === task.id)
+          if (!currentTask || !currentTask.subtasks || currentTask.subtasks.length === 0) {
+            return prev.map(t => t.id === task.id ? { ...updated, subtasks: [] } : t)
+          }
+
+          // Отменяем все выполненные подзадачи в фоне
+          const uncompletedSubtasks = currentTask.subtasks.map(async (subtask) => {
+            if (subtask.completed) {
+              try {
+                return await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
+              } catch (error) {
+                console.error(`Error uncompleting subtask ${subtask.id}:`, error)
+                return subtask
+              }
             }
-          }
-          return subtask
+            return subtask
+          })
+
+          // Ждем завершения всех операций
+          Promise.all(uncompletedSubtasks).then(updatedSubtasks => {
+            // Проверяем актуальность перед обновлением
+            const latestVersion = taskUpdateVersionsRef.current.get(task.id)
+            if (latestVersion === updateVersion) {
+              setTasks(prevTasks => prevTasks.map(t => {
+                if (t.id === task.id) {
+                  return { ...updated, subtasks: updatedSubtasks }
+                }
+                return t
+              }))
+            }
+          })
+
+          return prev.map(t => t.id === task.id ? { ...updated, subtasks: currentTask.subtasks } : t)
         })
-
-        // Ждем завершения всех операций и обновляем подзадачи
-        const updatedSubtasks = await Promise.all(uncompletedSubtasks)
-
-        setTasks(prev => prev.map(t => {
-          if (t.id === task.id) {
-            // Сохраняем подзадачи при обновлении задачи
-            return { ...updated, subtasks: updatedSubtasks }
-          }
-          return t
-        }))
       } else {
-        // Обновляем задачу с данными с сервера
+        // Обновляем задачу с данными с сервера, используя актуальное состояние
         setTasks(prev => prev.map(t => {
           if (t.id === task.id) {
-            // Сохраняем подзадачи если они есть
+            // Сохраняем подзадачи если они есть из актуального состояния
             return { ...updated, subtasks: t.subtasks || [] }
           }
           return t
@@ -547,13 +575,18 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       }
     } catch (error) {
       console.error('Error toggling task:', error)
-      // Откатываем изменения при ошибке
-      setTasks(prev => prev.map(t => {
-        if (t.id === task.id) {
-          return previousTask
-        }
-        return t
-      }))
+      // Проверяем актуальность перед откатом
+      const currentVersion = taskUpdateVersionsRef.current.get(task.id)
+      if (currentVersion === updateVersion) {
+        // Откатываем изменения при ошибке только если это актуальное обновление
+        setTasks(prev => prev.map(t => {
+          if (t.id === task.id) {
+            // Откатываем к предыдущему состоянию из актуального состояния
+            return { ...t, completed: !newCompletedState }
+          }
+          return t
+        }))
+      }
     }
   }, [api, isPastDate])
 
@@ -583,98 +616,145 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       return
     }
 
+    // Создаем уникальную версию для этого обновления
+    const updateVersion = Date.now()
+    subtaskUpdateVersionsRef.current.set(subtask.id, updateVersion)
+
     // Оптимистичное обновление - сразу меняем состояние в UI
-    const newCompletedState = !subtask.completed
-    const previousSubtask = { ...subtask }
-    const previousParentTask = { ...parentTask }
+    // Используем функциональное обновление для получения актуального состояния
+    let newCompletedState = null
+    setTasks(prev => {
+      const currentParentTask = prev.find(t => t.id === parentTask.id)
+      if (!currentParentTask) return prev
 
-    // Мгновенно обновляем UI
-    setTasks(prev => prev.map(t => {
-      if (t.id === parentTask.id) {
-        const updatedSubtasks = (t.subtasks || []).map(st =>
-          st.id === subtask.id ? { ...st, completed: newCompletedState } : st
-        )
+      const currentSubtask = (currentParentTask.subtasks || []).find(st => st.id === subtask.id)
+      if (!currentSubtask) return prev
 
-        // Проверяем, все ли подзадачи выполнены
-        const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
+      newCompletedState = !currentSubtask.completed
 
-        // Автоматически обновляем статус задачи в UI
-        const updatedTask = { ...t, subtasks: updatedSubtasks }
-        if (allCompleted && !t.completed) {
-          updatedTask.completed = true
-        } else if (!allCompleted && t.completed) {
-          updatedTask.completed = false
-        }
-
-        return updatedTask
-      }
-      return t
-    }))
-
-    // Затем синхронизируем с сервером
-    try {
-      const updated = await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
-      invalidateCache('/tasks') // Инвалидируем кэш задач
-
-      // Обновляем подзадачу в задаче с данными с сервера
-      setTasks(prev => prev.map(t => {
+      return prev.map(t => {
         if (t.id === parentTask.id) {
           const updatedSubtasks = (t.subtasks || []).map(st =>
-            st.id === subtask.id ? updated : st
+            st.id === subtask.id ? { ...st, completed: newCompletedState } : st
           )
 
           // Проверяем, все ли подзадачи выполнены
           const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
 
-          // Если все подзадачи выполнены и задача еще не выполнена, автоматически отмечаем задачу
+          // Автоматически обновляем статус задачи в UI
+          const updatedTask = { ...t, subtasks: updatedSubtasks }
           if (allCompleted && !t.completed) {
-            // Автоматически отмечаем задачу через API в фоне
-            api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
-              // Обновляем задачу в списке, сохраняя подзадачи
-              setTasks(prevTasks => prevTasks.map(task => {
-                if (task.id === updatedTask.id) {
-                  // Сохраняем подзадачи при обновлении задачи
-                  return { ...updatedTask, subtasks: updatedSubtasks }
-                }
-                return task
-              }))
-            }).catch(error => {
-              console.error('Error auto-completing task:', error)
-            })
-          }
-          // Если хотя бы одна подзадача не выполнена и задача выполнена, автоматически отменяем задачу
-          else if (!allCompleted && t.completed) {
-            // Автоматически отменяем задачу через API в фоне
-            api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
-              // Обновляем задачу в списке, сохраняя подзадачи
-              setTasks(prevTasks => prevTasks.map(task => {
-                if (task.id === updatedTask.id) {
-                  // Сохраняем подзадачи при обновлении задачи
-                  return { ...updatedTask, subtasks: updatedSubtasks }
-                }
-                return task
-              }))
-            }).catch(error => {
-              console.error('Error auto-uncompleting task:', error)
-            })
+            updatedTask.completed = true
+          } else if (!allCompleted && t.completed) {
+            updatedTask.completed = false
           }
 
-          return { ...t, subtasks: updatedSubtasks }
+          return updatedTask
         }
         return t
-      }))
+      })
+    })
+
+    // Если не удалось найти подзадачу, выходим
+    if (newCompletedState === null) {
+      return
+    }
+
+    // Затем синхронизируем с сервером
+    try {
+      const updated = await api(`/subtask/${subtask.id}/complete`, { method: 'POST' })
+
+      // Проверяем, не устарел ли этот ответ
+      const currentVersion = subtaskUpdateVersionsRef.current.get(subtask.id)
+      if (currentVersion !== updateVersion) {
+        // Это устаревший ответ, игнорируем его
+        return
+      }
+
+      invalidateCache('/tasks') // Инвалидируем кэш задач
+
+      // Обновляем подзадачу в задаче с данными с сервера, используя актуальное состояние
+      setTasks(prev => {
+        const currentParentTask = prev.find(t => t.id === parentTask.id)
+        if (!currentParentTask) return prev
+
+        return prev.map(t => {
+          if (t.id === parentTask.id) {
+            const updatedSubtasks = (t.subtasks || []).map(st =>
+              st.id === subtask.id ? updated : st
+            )
+
+            // Проверяем, все ли подзадачи выполнены
+            const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
+
+            // Если все подзадачи выполнены и задача еще не выполнена, автоматически отмечаем задачу
+            if (allCompleted && !t.completed) {
+              // Автоматически отмечаем задачу через API в фоне
+              api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
+                // Проверяем актуальность перед обновлением
+                const latestVersion = subtaskUpdateVersionsRef.current.get(subtask.id)
+                if (latestVersion === updateVersion) {
+                  setTasks(prevTasks => prevTasks.map(task => {
+                    if (task.id === updatedTask.id) {
+                      // Используем актуальные подзадачи
+                      const currentTask = prevTasks.find(tt => tt.id === task.id)
+                      return { ...updatedTask, subtasks: currentTask?.subtasks || updatedSubtasks }
+                    }
+                    return task
+                  }))
+                }
+              }).catch(error => {
+                console.error('Error auto-completing task:', error)
+              })
+            }
+            // Если хотя бы одна подзадача не выполнена и задача выполнена, автоматически отменяем задачу
+            else if (!allCompleted && t.completed) {
+              // Автоматически отменяем задачу через API в фоне
+              api(`/task/${t.id}/complete`, { method: 'POST' }).then(updatedTask => {
+                // Проверяем актуальность перед обновлением
+                const latestVersion = subtaskUpdateVersionsRef.current.get(subtask.id)
+                if (latestVersion === updateVersion) {
+                  setTasks(prevTasks => prevTasks.map(task => {
+                    if (task.id === updatedTask.id) {
+                      // Используем актуальные подзадачи
+                      const currentTask = prevTasks.find(tt => tt.id === task.id)
+                      return { ...updatedTask, subtasks: currentTask?.subtasks || updatedSubtasks }
+                    }
+                    return task
+                  }))
+                }
+              }).catch(error => {
+                console.error('Error auto-uncompleting task:', error)
+              })
+            }
+
+            return { ...t, subtasks: updatedSubtasks }
+          }
+          return t
+        })
+      })
     } catch (error) {
       console.error('Error toggling subtask:', error)
-      // Откатываем изменения при ошибке
-      setTasks(prev => prev.map(t => {
-        if (t.id === parentTask.id) {
-          const updatedSubtasks = (t.subtasks || []).map(st =>
-            st.id === subtask.id ? previousSubtask : st
-          )
-          return { ...previousParentTask, subtasks: updatedSubtasks }
-        }
-        return t
-      }))
+      // Проверяем актуальность перед откатом
+      const currentVersion = subtaskUpdateVersionsRef.current.get(subtask.id)
+      if (currentVersion === updateVersion && newCompletedState !== null) {
+        // Откатываем изменения при ошибке только если это актуальное обновление
+        setTasks(prev => prev.map(t => {
+          if (t.id === parentTask.id) {
+            const updatedSubtasks = (t.subtasks || []).map(st =>
+              st.id === subtask.id ? { ...st, completed: !newCompletedState } : st
+            )
+            // Пересчитываем статус задачи
+            const allCompleted = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed)
+            return {
+              ...t,
+              subtasks: updatedSubtasks,
+              completed: allCompleted ? t.completed : false
+            }
+          }
+          return t
+        }))
+      }
     }
   }, [api, isPastDate])
 
