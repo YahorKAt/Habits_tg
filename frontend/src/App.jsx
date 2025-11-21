@@ -308,9 +308,9 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
 }
 
 // Компонент для страницы задач
-function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, onEditSubtask }) {
+function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, onEditSubtask, cachedTasks = null, onTasksUpdate }) {
   const initData = useInitData()
-  const [tasks, setTasks] = useState([])
+  const [tasks, setTasks] = useState(cachedTasks || [])
   const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
@@ -318,28 +318,55 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
   const taskUpdateVersionsRef = useRef(new Map()) // Отслеживаем версии обновлений задач для предотвращения race conditions
   const subtaskUpdateVersionsRef = useRef(new Map()) // Отслеживаем версии обновлений подзадач
-
+  const tasksCacheRef = useRef({}) // Кэш задач по датам
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadTasks = useCallback(async () => {
+  // Инициализация из кэша при монтировании
+  useEffect(() => {
+    if (cachedTasks) {
+      const todayStr = formatDateForAPI(new Date())
+      tasksCacheRef.current[todayStr] = cachedTasks
+      setTasks(cachedTasks)
+    }
+  }, [cachedTasks])
+
+  const loadTasks = useCallback(async (date = selectedDate, forceReload = false) => {
+    const dateStr = formatDateForAPI(date)
+
+    // Проверяем кэш, если не требуется принудительная перезагрузка
+    if (!forceReload && tasksCacheRef.current[dateStr]) {
+      setTasks(tasksCacheRef.current[dateStr])
+      return
+    }
+
     setLoading(true)
     try {
-      // Форматируем выбранную дату для запроса
-      const dateStr = formatDateForAPI(selectedDate)
       const data = await api(`/tasks?date=${dateStr}`)
+      tasksCacheRef.current[dateStr] = data
       setTasks(data)
+
+      // Обновляем кэш в родительском компоненте
+      if (onTasksUpdate && dateStr === formatDateForAPI(new Date())) {
+        onTasksUpdate(data)
+      }
     } finally {
       setLoading(false)
     }
-  }, [api, selectedDate])
+  }, [api, selectedDate, onTasksUpdate])
 
   const loadTasksRef = useRef(null)
   loadTasksRef.current = loadTasks
 
   useEffect(() => {
-    loadTasks()
-  }, [loadTasks]) // Перезагружаем задачи при изменении выбранной даты
+    // Загружаем только если данных нет в кэше для выбранной даты
+    const dateStr = formatDateForAPI(selectedDate)
+    if (!tasksCacheRef.current[dateStr]) {
+      loadTasks(selectedDate)
+    } else {
+      setTasks(tasksCacheRef.current[dateStr])
+    }
+  }, [selectedDate]) // Перезагружаем задачи при изменении выбранной даты
 
   // Перезагружаем задачи при монтировании компонента (ключ изменился)
   // Это обеспечит актуальный список после возврата со страницы редактирования
@@ -349,11 +376,12 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
     if (onTaskUpdated) {
       onTaskUpdated(() => {
         if (loadTasksRef.current) {
-          loadTasksRef.current()
+          // Принудительно перезагружаем при обновлении
+          loadTasksRef.current(selectedDate, true)
         }
       })
     }
-  }, [onTaskUpdated])
+  }, [onTaskUpdated, selectedDate])
 
   // Мемоизируем обработчики для предотвращения лишних ререндеров
   const handleDateChange = useCallback((date) => {
@@ -1064,48 +1092,96 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 }
 
 // Компонент для страницы статистики
-function StatisticsPage() {
+function StatisticsPage({ cachedStats = null, cachedHabits = [], onStatsUpdate, onHabitsUpdate }) {
   const initData = useInitData()
   const [period, setPeriod] = useState('day') // Стартовый период - день
-  const [stats, setStats] = useState(null)
-  const [habitsStats, setHabitsStats] = useState([])
+  const [stats, setStats] = useState(cachedStats)
+  const [habitsStats, setHabitsStats] = useState(cachedHabits)
   const [loading, setLoading] = useState(false)
+  const statsCacheRef = useRef({}) // Кэш статистики по периодам
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadStats = useCallback(async (p) => {
+  // Инициализация из кэша при монтировании
+  useEffect(() => {
+    if (cachedStats) {
+      statsCacheRef.current['day'] = cachedStats
+      setStats(cachedStats)
+    }
+    if (cachedHabits && cachedHabits.length > 0) {
+      setHabitsStats(cachedHabits)
+    }
+  }, [cachedStats, cachedHabits])
+
+  const loadStats = useCallback(async (p, forceReload = false) => {
+    // Проверяем кэш, если не требуется принудительная перезагрузка
+    if (!forceReload && statsCacheRef.current[p]) {
+      setStats(statsCacheRef.current[p])
+      return
+    }
+
     setLoading(true)
     try {
       const data = await api(`/stats?period=${p}`)
+      statsCacheRef.current[p] = data
       setStats(data)
+
+      // Обновляем кэш в родительском компоненте для периода 'day'
+      if (onStatsUpdate && p === 'day') {
+        onStatsUpdate(data)
+      }
     } catch (error) {
       console.error('Error loading stats:', error)
       // Устанавливаем пустую статистику при ошибке
-      setStats({
+      const emptyStats = {
         completed: 0,
         in_progress: 0,
         upcoming: 0,
         total: 0
-      })
+      }
+      statsCacheRef.current[p] = emptyStats
+      setStats(emptyStats)
     } finally {
       setLoading(false)
     }
-  }, [api])
+  }, [api, onStatsUpdate])
 
-  const loadHabitsStats = useCallback(async () => {
+  const loadHabitsStats = useCallback(async (forceReload = false) => {
+    // Если данные уже есть в кэше и не требуется принудительная перезагрузка, пропускаем
+    if (!forceReload && cachedHabits && cachedHabits.length > 0) {
+      return
+    }
+
     try {
       const data = await api('/habits')
       setHabitsStats(data)
+
+      // Обновляем кэш в родительском компоненте
+      if (onHabitsUpdate) {
+        onHabitsUpdate(data)
+      }
     } catch (error) {
       console.error('Error loading habits stats:', error)
       setHabitsStats([])
     }
-  }, [api])
+  }, [api, cachedHabits, onHabitsUpdate])
 
   useEffect(() => {
-    loadStats(period)
-    loadHabitsStats()
-  }, [period, loadStats, loadHabitsStats])
+    // Загружаем только если данных нет в кэше
+    if (!statsCacheRef.current[period]) {
+      loadStats(period)
+    } else {
+      setStats(statsCacheRef.current[period])
+    }
+  }, [period]) // Зависимость только от периода
+
+  // Привычки загружаем только один раз при монтировании, если их нет в кэше
+  useEffect(() => {
+    if (!cachedHabits || cachedHabits.length === 0) {
+      loadHabitsStats()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Только при монтировании
 
   const handlePeriodChange = useCallback((e) => {
     setPeriod(e.target.value)
@@ -1301,7 +1377,7 @@ function MoodIcon({ value, size = 20 }) {
 }
 
 // Компонент для страницы журнала
-function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
+function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {}, onNotesUpdate, onMonthMoodMapUpdate }) {
   const initData = useInitData()
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [notes, setNotes] = useState(preloadedNotes)
@@ -1313,24 +1389,53 @@ function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
   const [editingNote, setEditingNote] = useState(null)
   const [editContent, setEditContent] = useState('')
   const [editMood, setEditMood] = useState('')
-
+  const notesCacheRef = useRef({}) // Кэш заметок по датам
+  const monthMoodMapCacheRef = useRef({}) // Кэш карты настроений по месяцам
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadNotes = useCallback(async (date, showLoading = true) => {
+  // Инициализация из кэша при монтировании
+  useEffect(() => {
+    if (preloadedNotes && preloadedNotes.length > 0) {
+      const todayStr = format(new Date(), 'yyyy-MM-dd')
+      notesCacheRef.current[todayStr] = preloadedNotes
+      setNotes(preloadedNotes)
+    }
+    if (preloadedMonthMoodMap && Object.keys(preloadedMonthMoodMap).length > 0) {
+      const today = new Date()
+      const monthKey = `${today.getFullYear()}-${today.getMonth() + 1}`
+      monthMoodMapCacheRef.current[monthKey] = preloadedMonthMoodMap
+      setMonthMoodMap(preloadedMonthMoodMap)
+    }
+  }, [preloadedNotes, preloadedMonthMoodMap])
+
+  const loadNotes = useCallback(async (date, showLoading = true, forceReload = false) => {
+    const dateStr = format(date, 'yyyy-MM-dd')
+
+    // Проверяем кэш, если не требуется принудительная перезагрузка
+    if (!forceReload && notesCacheRef.current[dateStr]) {
+      setNotes(notesCacheRef.current[dateStr])
+      return
+    }
+
     if (showLoading) {
       setLoading(true)
     }
     try {
-      const dateStr = format(date, 'yyyy-MM-dd')
       const data = await api(`/notes?date=${dateStr}`)
+      notesCacheRef.current[dateStr] = data
       setNotes(data)
+
+      // Обновляем кэш в родительском компоненте для сегодняшней даты
+      if (onNotesUpdate && dateStr === format(new Date(), 'yyyy-MM-dd')) {
+        onNotesUpdate(data)
+      }
     } finally {
       if (showLoading) {
         setLoading(false)
       }
     }
-  }, [api])
+  }, [api, onNotesUpdate])
 
   const normalizeMood = (mood) => {
     switch (mood) {
@@ -1361,11 +1466,19 @@ function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
     }
   }
 
-  const loadMonthMood = useCallback(async (date) => {
+  const loadMonthMood = useCallback(async (date, forceReload = false) => {
+    const year = date.getFullYear()
+    const month = date.getMonth() + 1 // getMonth() возвращает 0-11
+    const monthKey = `${year}-${month}`
+
+    // Проверяем кэш, если не требуется принудительная перезагрузка
+    if (!forceReload && monthMoodMapCacheRef.current[monthKey]) {
+      setMonthMoodMap(monthMoodMapCacheRef.current[monthKey])
+      return
+    }
+
     try {
       // Загружаем все заметки за месяц одним запросом
-      const year = date.getFullYear()
-      const month = date.getMonth() + 1 // getMonth() возвращает 0-11
       const data = await api(`/notes?year=${year}&month=${month}`)
 
       const map = {}
@@ -1385,12 +1498,19 @@ function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
           }
         })
       }
+      monthMoodMapCacheRef.current[monthKey] = map
       setMonthMoodMap(map)
+
+      // Обновляем кэш в родительском компоненте для текущего месяца
+      const today = new Date()
+      if (onMonthMoodMapUpdate && year === today.getFullYear() && month === today.getMonth() + 1) {
+        onMonthMoodMapUpdate(map)
+      }
     } catch (e) {
       console.error('Error loading month mood:', e)
       // В случае ошибки просто не обновляем карту
     }
-  }, [api])
+  }, [api, onMonthMoodMapUpdate])
 
   const createNote = async () => {
     if (!selectedMood) {
@@ -1406,11 +1526,28 @@ function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
           mood: selectedMood
         })
       })
-      setNotes(prev => [created, ...prev])
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      const updatedNotes = [created, ...notes]
+      setNotes(updatedNotes)
+      // Обновляем кэш
+      notesCacheRef.current[dateStr] = updatedNotes
+      // Обновляем кэш в родительском компоненте
+      if (onNotesUpdate && dateStr === format(new Date(), 'yyyy-MM-dd')) {
+        onNotesUpdate(updatedNotes)
+      }
       setNewNote('')
       setShowCreateForm(false)
-      const dateStr = formatDateForAPI(selectedDate)
-      setMonthMoodMap(prev => ({ ...prev, [dateStr]: moodToClasses(selectedMood) }))
+      const dateStrForMap = formatDateForAPI(selectedDate)
+      const updatedMap = { ...monthMoodMap, [dateStrForMap]: moodToClasses(selectedMood) }
+      setMonthMoodMap(updatedMap)
+      // Обновляем кэш карты настроений
+      const today = new Date()
+      const monthKey = `${selectedDate.getFullYear()}-${selectedDate.getMonth() + 1}`
+      monthMoodMapCacheRef.current[monthKey] = updatedMap
+      if (onMonthMoodMapUpdate && selectedDate.getFullYear() === today.getFullYear() && selectedDate.getMonth() === today.getMonth()) {
+        onMonthMoodMapUpdate(updatedMap)
+      }
+      invalidateCache('/notes')
     } catch (err) {
       console.error(err)
       alert('Не удалось добавить заметку')
@@ -1446,20 +1583,43 @@ function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
       mood: editMood,
     }
     try {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd')
+      let updatedNotes
+
       // Попробуем PUT, если не поддерживается — fallback: DELETE+POST
       try {
         const updated = await api(`/notes/${editingNote.id}`, {
           method: 'PUT',
           body: JSON.stringify(payload)
         })
-        setNotes(prev => prev.map(n => n.id === editingNote.id ? updated : n))
+        updatedNotes = notes.map(n => n.id === editingNote.id ? updated : n)
+        setNotes(updatedNotes)
       } catch (e) {
         await api(`/notes/${editingNote.id}`, { method: 'DELETE' })
         const created = await api('/notes', { method: 'POST', body: JSON.stringify(payload) })
-        setNotes(prev => [created, ...prev.filter(n => n.id !== editingNote.id)])
+        updatedNotes = [created, ...notes.filter(n => n.id !== editingNote.id)]
+        setNotes(updatedNotes)
       }
-      const dateStr = formatDateForAPI(selectedDate)
-      setMonthMoodMap(prev => ({ ...prev, [dateStr]: moodToClasses(editMood) }))
+
+      // Обновляем кэш
+      notesCacheRef.current[dateStr] = updatedNotes
+      // Обновляем кэш в родительском компоненте
+      if (onNotesUpdate && dateStr === format(new Date(), 'yyyy-MM-dd')) {
+        onNotesUpdate(updatedNotes)
+      }
+
+      const dateStrForMap = formatDateForAPI(selectedDate)
+      const updatedMap = { ...monthMoodMap, [dateStrForMap]: moodToClasses(editMood) }
+      setMonthMoodMap(updatedMap)
+      // Обновляем кэш карты настроений
+      const today = new Date()
+      const monthKey = `${selectedDate.getFullYear()}-${selectedDate.getMonth() + 1}`
+      monthMoodMapCacheRef.current[monthKey] = updatedMap
+      if (onMonthMoodMapUpdate && selectedDate.getFullYear() === today.getFullYear() && selectedDate.getMonth() === today.getMonth()) {
+        onMonthMoodMapUpdate(updatedMap)
+      }
+
+      invalidateCache('/notes')
       cancelEdit()
     } catch (err) {
       console.error(err)
@@ -1470,23 +1630,18 @@ function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
   useEffect(() => {
     // Загружаем заметки только если выбранная дата изменилась или это не сегодняшняя дата
     const today = new Date()
-    const isToday = isSameDay(selectedDate, today)
+    const dateStr = format(selectedDate, 'yyyy-MM-dd')
 
-    // Если это сегодня и у нас есть предзагруженные заметки, используем их сразу
-    if (isToday && preloadedNotes.length >= 0) {
-      // Используем предзагруженные заметки сразу (даже если массив пустой)
-      setNotes(preloadedNotes)
+    // Проверяем кэш сначала
+    if (notesCacheRef.current[dateStr]) {
+      setNotes(notesCacheRef.current[dateStr])
       setLoading(false)
-      // Обновляем в фоне для актуальности (но не показываем loading)
-      loadNotes(selectedDate, false).catch(() => {
-        // Игнорируем ошибки фоновой загрузки
-      })
     } else {
-      // Иначе загружаем заново
+      // Загружаем только если данных нет в кэше
       loadNotes(selectedDate, true)
     }
     setShowCreateForm(false)
-  }, [selectedDate, loadNotes, preloadedNotes])
+  }, [selectedDate, loadNotes])
 
   useEffect(() => {
     // Если у нас есть предзагруженные данные для текущего месяца, используем их
@@ -1848,6 +2003,9 @@ export default function App() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [preloadedNotes, setPreloadedNotes] = useState([])
   const [preloadedMonthMoodMap, setPreloadedMonthMoodMap] = useState({})
+  const [cachedTasks, setCachedTasks] = useState(null)
+  const [cachedStats, setCachedStats] = useState(null)
+  const [cachedHabits, setCachedHabits] = useState([])
   const progressRef = useRef(0)
 
   const api = useMemo(() => createApiClient(initData), [initData])
@@ -1892,28 +2050,39 @@ export default function App() {
         try {
           // 1. Задачи для сегодня
           const dateStr = formatDateForAPI(new Date())
-          await api(`/tasks?date=${dateStr}`)
+          const tasksData = await api(`/tasks?date=${dateStr}`)
+          setCachedTasks(Array.isArray(tasksData) ? tasksData : [])
           await animateProgress(20)
         } catch (error) {
           console.error('Error loading tasks:', error)
+          setCachedTasks([])
           await animateProgress(20)
         }
 
         try {
           // 2. Статистика
-          await api('/stats?period=day')
+          const statsData = await api('/stats?period=day')
+          setCachedStats(statsData)
           await animateProgress(40)
         } catch (error) {
           console.error('Error loading stats:', error)
+          setCachedStats({
+            completed: 0,
+            in_progress: 0,
+            upcoming: 0,
+            total: 0
+          })
           await animateProgress(40)
         }
 
         try {
           // 3. Привычки
-          await api('/habits')
+          const habitsData = await api('/habits')
+          setCachedHabits(Array.isArray(habitsData) ? habitsData : [])
           await animateProgress(60)
         } catch (error) {
           console.error('Error loading habits:', error)
+          setCachedHabits([])
           await animateProgress(60)
         }
 
@@ -2081,13 +2250,37 @@ export default function App() {
           onTaskUpdated={(callback) => {
             taskUpdateCallbackRef.current = callback
           }}
+          cachedTasks={cachedTasks}
+          onTasksUpdate={(tasks) => {
+            setCachedTasks(tasks)
+            invalidateCache('/tasks')
+          }}
         />
       ) : route === 'statistics' ? (
-        <StatisticsPage />
+        <StatisticsPage
+          cachedStats={cachedStats}
+          cachedHabits={cachedHabits}
+          onStatsUpdate={(stats) => {
+            setCachedStats(stats)
+            invalidateCache('/stats')
+          }}
+          onHabitsUpdate={(habits) => {
+            setCachedHabits(habits)
+            invalidateCache('/habits')
+          }}
+        />
       ) : (
         <JournalPage
           preloadedNotes={preloadedNotes}
           preloadedMonthMoodMap={preloadedMonthMoodMap}
+          onNotesUpdate={(notes) => {
+            setPreloadedNotes(notes)
+            invalidateCache('/notes')
+          }}
+          onMonthMoodMapUpdate={(map) => {
+            setPreloadedMonthMoodMap(map)
+            invalidateCache('/notes')
+          }}
         />
       )}
       <BottomNavigation active={route} onNavigate={setRoute} />
