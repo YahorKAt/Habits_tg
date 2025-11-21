@@ -1155,15 +1155,15 @@ function MoodIcon({ value, size = 20 }) {
 }
 
 // Компонент для страницы журнала
-function JournalPage() {
+function JournalPage({ preloadedNotes = [], preloadedMonthMoodMap = {} }) {
   const initData = useInitData()
   const [selectedDate, setSelectedDate] = useState(new Date())
-  const [notes, setNotes] = useState([])
+  const [notes, setNotes] = useState(preloadedNotes)
   const [loading, setLoading] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newNote, setNewNote] = useState('')
   const [selectedMood, setSelectedMood] = useState('')
-  const [monthMoodMap, setMonthMoodMap] = useState({})
+  const [monthMoodMap, setMonthMoodMap] = useState(preloadedMonthMoodMap)
   const [editingNote, setEditingNote] = useState(null)
   const [editContent, setEditContent] = useState('')
   const [editMood, setEditMood] = useState('')
@@ -1171,14 +1171,18 @@ function JournalPage() {
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
-  const loadNotes = useCallback(async (date) => {
-    setLoading(true)
+  const loadNotes = useCallback(async (date, showLoading = true) => {
+    if (showLoading) {
+      setLoading(true)
+    }
     try {
       const dateStr = format(date, 'yyyy-MM-dd')
       const data = await api(`/notes?date=${dateStr}`)
       setNotes(data)
     } finally {
-      setLoading(false)
+      if (showLoading) {
+        setLoading(false)
+      }
     }
   }, [api])
 
@@ -1318,13 +1322,39 @@ function JournalPage() {
   }
 
   useEffect(() => {
-    loadNotes(selectedDate)
+    // Загружаем заметки только если выбранная дата изменилась или это не сегодняшняя дата
+    const today = new Date()
+    const isToday = isSameDay(selectedDate, today)
+
+    // Если это сегодня и у нас есть предзагруженные заметки, используем их сразу
+    if (isToday && preloadedNotes.length >= 0) {
+      // Используем предзагруженные заметки сразу (даже если массив пустой)
+      setNotes(preloadedNotes)
+      setLoading(false)
+      // Обновляем в фоне для актуальности (но не показываем loading)
+      loadNotes(selectedDate, false).catch(() => {
+        // Игнорируем ошибки фоновой загрузки
+      })
+    } else {
+      // Иначе загружаем заново
+      loadNotes(selectedDate, true)
+    }
     setShowCreateForm(false)
-  }, [selectedDate, loadNotes])
+  }, [selectedDate, loadNotes, preloadedNotes])
 
   useEffect(() => {
-    loadMonthMood(selectedDate)
-  }, [selectedDate.getFullYear(), selectedDate.getMonth(), loadMonthMood])
+    // Если у нас есть предзагруженные данные для текущего месяца, используем их
+    const today = new Date()
+    const isCurrentMonth = selectedDate.getFullYear() === today.getFullYear() &&
+      selectedDate.getMonth() === today.getMonth()
+
+    if (isCurrentMonth && Object.keys(preloadedMonthMoodMap).length > 0) {
+      setMonthMoodMap(preloadedMonthMoodMap)
+    } else {
+      // Иначе загружаем заново
+      loadMonthMood(selectedDate)
+    }
+  }, [selectedDate.getFullYear(), selectedDate.getMonth(), loadMonthMood, preloadedMonthMoodMap])
 
   const calendarDays = useMemo(() => {
     const start = startOfMonth(selectedDate)
@@ -1689,6 +1719,8 @@ export default function App() {
   const [editingSubtask, setEditingSubtask] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState(0)
+  const [preloadedNotes, setPreloadedNotes] = useState([])
+  const [preloadedMonthMoodMap, setPreloadedMonthMoodMap] = useState({})
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
@@ -1701,28 +1733,85 @@ export default function App() {
 
         // Загружаем данные последовательно для плавного обновления прогресса
         try {
-          // 1. Задачи для сегодня (40%)
+          // 1. Задачи для сегодня (30%)
           const dateStr = formatDateForAPI(new Date())
           await api(`/tasks?date=${dateStr}`)
-          setLoadingProgress(40)
+          setLoadingProgress(30)
         } catch (error) {
           console.error('Error loading tasks:', error)
         }
 
         try {
-          // 2. Статистика (30%)
+          // 2. Статистика (25%)
           await api('/stats?period=day')
-          setLoadingProgress(70)
+          setLoadingProgress(55)
         } catch (error) {
           console.error('Error loading stats:', error)
         }
 
         try {
-          // 3. Привычки (30%)
+          // 3. Привычки (20%)
           await api('/habits')
-          setLoadingProgress(100)
+          setLoadingProgress(75)
         } catch (error) {
           console.error('Error loading habits:', error)
+        }
+
+        try {
+          // 4. Заметки для сегодня (15%)
+          const today = new Date()
+          const dateStr = format(today, 'yyyy-MM-dd')
+          const notesData = await api(`/notes?date=${dateStr}`)
+          setPreloadedNotes(Array.isArray(notesData) ? notesData : [])
+          setLoadingProgress(90)
+        } catch (error) {
+          console.error('Error loading notes:', error)
+        }
+
+        try {
+          // 5. Заметки за текущий месяц для календаря (10%)
+          const today = new Date()
+          const year = today.getFullYear()
+          const month = today.getMonth() + 1
+          const monthNotesData = await api(`/notes?year=${year}&month=${month}`)
+
+          // Создаем карту настроений из предзагруженных данных
+          const map = {}
+          if (Array.isArray(monthNotesData)) {
+            const notesByDate = {}
+            monthNotesData.forEach(note => {
+              if (note.date && !notesByDate[note.date]) {
+                notesByDate[note.date] = note
+              }
+            })
+
+            // Функция для преобразования настроения в классы
+            const moodToClasses = (mood) => {
+              const m = mood === '😡' ? 'very_bad' :
+                mood === '😞' ? 'bad' :
+                  mood === '😐' ? 'neutral' :
+                    mood === '🙂' ? 'good' :
+                      mood === '🤩' ? 'very_good' : mood
+              switch (m) {
+                case 'very_good': return 'bg-green-600 text-white'
+                case 'good': return 'bg-green-300 text-gray-900'
+                case 'neutral': return 'bg-yellow-300 text-gray-900'
+                case 'bad': return 'bg-red-300 text-gray-900'
+                case 'very_bad': return 'bg-red-600 text-white'
+                default: return ''
+              }
+            }
+
+            Object.entries(notesByDate).forEach(([dateStr, note]) => {
+              if (note?.mood) {
+                map[dateStr] = moodToClasses(note.mood)
+              }
+            })
+          }
+          setPreloadedMonthMoodMap(map)
+          setLoadingProgress(100)
+        } catch (error) {
+          console.error('Error loading month notes:', error)
         }
 
         // Небольшая задержка для плавности анимации прогресс-бара
@@ -1834,7 +1923,10 @@ export default function App() {
       ) : route === 'statistics' ? (
         <StatisticsPage />
       ) : (
-        <JournalPage />
+        <JournalPage
+          preloadedNotes={preloadedNotes}
+          preloadedMonthMoodMap={preloadedMonthMoodMap}
+        />
       )}
       <BottomNavigation active={route} onNavigate={setRoute} />
     </div>
