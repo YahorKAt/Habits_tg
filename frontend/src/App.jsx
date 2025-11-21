@@ -1775,34 +1775,15 @@ function LoadingScreen({ progress = 0 }) {
 
           {/* Заполненная часть */}
           <div
-            className="absolute left-0 top-0 h-full bg-yellow-500 rounded-full transition-all duration-300 ease-out"
+            className="absolute left-0 top-0 h-full bg-yellow-500 rounded-full transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
-          >
-            {/* Сегменты прогресс-бара */}
-            <div className="h-full flex">
-              {Array.from({ length: 10 }, (_, i) => (
-                <div
-                  key={i}
-                  className="flex-1 border-r border-yellow-400/50 last:border-r-0"
-                />
-              ))}
-            </div>
-          </div>
+          />
 
           {/* Незаполненная часть */}
           <div
             className="absolute right-0 top-0 h-full bg-gray-300 rounded-full"
             style={{ width: `${100 - progress}%` }}
-          >
-            <div className="h-full flex">
-              {Array.from({ length: 10 }, (_, i) => (
-                <div
-                  key={i}
-                  className="flex-1 border-r border-gray-400/50 last:border-r-0"
-                />
-              ))}
-            </div>
-          </div>
+          />
         </div>
 
         {/* Текст */}
@@ -1867,6 +1848,7 @@ export default function App() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [preloadedNotes, setPreloadedNotes] = useState([])
   const [preloadedMonthMoodMap, setPreloadedMonthMoodMap] = useState({})
+  const progressRef = useRef(0)
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
@@ -1876,46 +1858,79 @@ export default function App() {
       try {
         setIsLoading(true)
         setLoadingProgress(0)
+        progressRef.current = 0
 
-        // Загружаем данные последовательно для плавного обновления прогресса
+        // Функция для плавного увеличения прогресса
+        const animateProgress = (targetProgress, duration = 500) => {
+          return new Promise((resolve) => {
+            const startProgress = progressRef.current
+            const startTime = Date.now()
+
+            const updateProgress = () => {
+              const elapsed = Date.now() - startTime
+              const progress = Math.min(
+                startProgress + (targetProgress - startProgress) * (elapsed / duration),
+                targetProgress
+              )
+              progressRef.current = progress
+              setLoadingProgress(progress)
+
+              if (progress < targetProgress) {
+                requestAnimationFrame(updateProgress)
+              } else {
+                progressRef.current = targetProgress
+                setLoadingProgress(targetProgress)
+                resolve()
+              }
+            }
+
+            requestAnimationFrame(updateProgress)
+          })
+        }
+
+        // Загружаем данные последовательно с плавной анимацией прогресса
         try {
-          // 1. Задачи для сегодня (30%)
+          // 1. Задачи для сегодня
           const dateStr = formatDateForAPI(new Date())
           await api(`/tasks?date=${dateStr}`)
-          setLoadingProgress(30)
+          await animateProgress(20)
         } catch (error) {
           console.error('Error loading tasks:', error)
+          await animateProgress(20)
         }
 
         try {
-          // 2. Статистика (25%)
+          // 2. Статистика
           await api('/stats?period=day')
-          setLoadingProgress(55)
+          await animateProgress(40)
         } catch (error) {
           console.error('Error loading stats:', error)
+          await animateProgress(40)
         }
 
         try {
-          // 3. Привычки (20%)
+          // 3. Привычки
           await api('/habits')
-          setLoadingProgress(75)
+          await animateProgress(60)
         } catch (error) {
           console.error('Error loading habits:', error)
+          await animateProgress(60)
         }
 
         try {
-          // 4. Заметки для сегодня (15%)
+          // 4. Заметки для сегодня
           const today = new Date()
           const dateStr = format(today, 'yyyy-MM-dd')
           const notesData = await api(`/notes?date=${dateStr}`)
           setPreloadedNotes(Array.isArray(notesData) ? notesData : [])
-          setLoadingProgress(90)
+          await animateProgress(80)
         } catch (error) {
           console.error('Error loading notes:', error)
+          await animateProgress(80)
         }
 
         try {
-          // 5. Заметки за текущий месяц для календаря (10%)
+          // 5. Заметки за текущий месяц для календаря
           const today = new Date()
           const year = today.getFullYear()
           const month = today.getMonth() + 1
@@ -1955,13 +1970,14 @@ export default function App() {
             })
           }
           setPreloadedMonthMoodMap(map)
-          setLoadingProgress(100)
+          await animateProgress(100)
         } catch (error) {
           console.error('Error loading month notes:', error)
+          await animateProgress(100)
         }
 
-        // Небольшая задержка для плавности анимации прогресс-бара
-        await new Promise(resolve => setTimeout(resolve, 200))
+        // Небольшая задержка перед скрытием экрана загрузки
+        await new Promise(resolve => setTimeout(resolve, 300))
 
         setIsLoading(false)
       } catch (error) {
