@@ -40,6 +40,7 @@ function CreateTaskPage({ onBack, onTaskCreated, task = null }) {
   const api = useMemo(() => createApiClient(initData), [initData])
 
   const createTask = useCallback(async () => {
+    if (loading) return // Защита от множественных кликов
     if (!title.trim()) return
 
     setLoading(true)
@@ -207,6 +208,7 @@ function CreateSubtaskPage({ onBack, onSubtaskCreated, parentTask, subtask = nul
   const api = useMemo(() => createApiClient(initData), [initData])
 
   const createSubtask = useCallback(async () => {
+    if (loading) return // Защита от множественных кликов
     if (!title.trim()) return
 
     setLoading(true)
@@ -316,6 +318,10 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
   const [expandedTasks, setExpandedTasks] = useState(new Set()) // Отслеживаем развернутые задачи
   const taskUpdateVersionsRef = useRef(new Map()) // Отслеживаем версии обновлений задач для предотвращения race conditions
   const subtaskUpdateVersionsRef = useRef(new Map()) // Отслеживаем версии обновлений подзадач
+  const [togglingTasks, setTogglingTasks] = useState(new Set()) // Отслеживаем задачи, которые сейчас переключаются
+  const [deletingTasks, setDeletingTasks] = useState(new Set()) // Отслеживаем задачи, которые сейчас удаляются
+  const [togglingSubtasks, setTogglingSubtasks] = useState(new Set()) // Отслеживаем подзадачи, которые сейчас переключаются
+  const [deletingSubtasks, setDeletingSubtasks] = useState(new Set()) // Отслеживаем подзадачи, которые сейчас удаляются
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
@@ -489,10 +495,15 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
 
 
   const toggleTask = useCallback(async (task) => {
+    // Защита от множественных кликов
+    if (togglingTasks.has(task.id)) return
     // Блокируем изменение статуса для прошлых дат
     if (isPastDate) {
       return
     }
+
+    // Отмечаем, что задача обрабатывается
+    setTogglingTasks(prev => new Set(prev).add(task.id))
 
     // Создаем уникальную версию для этого обновления
     const updateVersion = Date.now()
@@ -595,31 +606,55 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
           return t
         }))
       }
+    } finally {
+      // Снимаем блокировку после завершения
+      setTogglingTasks(prev => {
+        const next = new Set(prev)
+        next.delete(task.id)
+        return next
+      })
     }
-  }, [api, isPastDate])
+  }, [api, isPastDate, togglingTasks])
 
   const deleteTask = useCallback(async (task) => {
+    // Защита от множественных кликов
+    if (deletingTasks.has(task.id)) return
     // Блокируем удаление задач для прошлых дат
     if (isPastDate) {
       return
     }
+
+    // Отмечаем, что задача удаляется
+    setDeletingTasks(prev => new Set(prev).add(task.id))
 
     try {
       await api(`/task/${task.id}`, { method: 'DELETE' })
       setTasks(prev => prev.filter(t => t.id !== task.id))
     } catch (error) {
       console.error('Error deleting task:', error)
+    } finally {
+      // Снимаем блокировку после завершения
+      setDeletingTasks(prev => {
+        const next = new Set(prev)
+        next.delete(task.id)
+        return next
+      })
     }
-  }, [api, isPastDate])
+  }, [api, isPastDate, deletingTasks])
 
   // Используем уже мемоизированную функцию
   const toggleExpanded = toggleTaskExpanded
 
   const toggleSubtask = useCallback(async (subtask, parentTask) => {
+    // Защита от множественных кликов
+    if (togglingSubtasks.has(subtask.id)) return
     // Блокируем изменение статуса для прошлых дат
     if (isPastDate) {
       return
     }
+
+    // Отмечаем, что подзадача обрабатывается
+    setTogglingSubtasks(prev => new Set(prev).add(subtask.id))
 
     // Создаем уникальную версию для этого обновления
     const updateVersion = Date.now()
@@ -770,14 +805,26 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
           return t
         }))
       }
+    } finally {
+      // Снимаем блокировку после завершения
+      setTogglingSubtasks(prev => {
+        const next = new Set(prev)
+        next.delete(subtask.id)
+        return next
+      })
     }
-  }, [api, isPastDate])
+  }, [api, isPastDate, togglingSubtasks])
 
   const deleteSubtask = useCallback(async (subtaskId, parentTaskId) => {
+    // Защита от множественных кликов
+    if (deletingSubtasks.has(subtaskId)) return
     // Блокируем удаление подзадач для прошлых дат
     if (isPastDate) {
       return
     }
+
+    // Отмечаем, что подзадача удаляется
+    setDeletingSubtasks(prev => new Set(prev).add(subtaskId))
 
     try {
       await api(`/subtask/${subtaskId}`, { method: 'DELETE' })
@@ -814,8 +861,15 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
       }))
     } catch (error) {
       console.error('Error deleting subtask:', error)
+    } finally {
+      // Снимаем блокировку после завершения
+      setDeletingSubtasks(prev => {
+        const next = new Set(prev)
+        next.delete(subtaskId)
+        return next
+      })
     }
-  }, [api, isPastDate])
+  }, [api, isPastDate, deletingSubtasks])
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -890,10 +944,10 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                     toggleTask(task)
                   }
                 }}
-                disabled={isPastDate}
-                className={`mt-1 w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors ${task.completed ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-orange-400 text-transparent'} ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                disabled={isPastDate || togglingTasks.has(task.id)}
+                className={`mt-1 w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors ${task.completed ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white border-orange-400 text-transparent'} ${isPastDate || togglingTasks.has(task.id) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                 aria-pressed={task.completed}
-                title={isPastDate ? 'Нельзя изменить статус для прошлых дат' : ''}
+                title={isPastDate ? 'Нельзя изменить статус для прошлых дат' : togglingTasks.has(task.id) ? 'Обработка...' : ''}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                   <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -982,9 +1036,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                       deleteTask(task)
                     }
                   }}
-                  disabled={isPastDate}
-                  className={`text-red-400 ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-600 cursor-pointer'}`}
-                  title={isPastDate ? 'Нельзя удалить задачу для прошлых дат' : 'Удалить задачу'}
+                  disabled={isPastDate || deletingTasks.has(task.id)}
+                  className={`text-red-400 ${isPastDate || deletingTasks.has(task.id) ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-600 cursor-pointer'}`}
+                  title={isPastDate ? 'Нельзя удалить задачу для прошлых дат' : deletingTasks.has(task.id) ? 'Удаление...' : 'Удалить задачу'}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                     <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1006,13 +1060,13 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                             toggleSubtask(subtask, task)
                           }
                         }}
-                        disabled={isPastDate}
+                        disabled={isPastDate || togglingSubtasks.has(subtask.id)}
                         className={`w-5 h-5 rounded-md border-2 inline-flex items-center justify-center transition-colors flex-shrink-0 ${subtask.completed
                           ? 'bg-orange-500 border-orange-500 text-white'
                           : 'bg-white border-orange-400 text-transparent'
-                          } ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          } ${isPastDate || togglingSubtasks.has(subtask.id) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                         aria-pressed={subtask.completed}
-                        title={isPastDate ? 'Нельзя изменить статус для прошлых дат' : ''}
+                        title={isPastDate ? 'Нельзя изменить статус для прошлых дат' : togglingSubtasks.has(subtask.id) ? 'Обработка...' : ''}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                           <path d="M20 6L9 17L4 12" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -1040,9 +1094,9 @@ function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onCreateSubtask, o
                             deleteSubtask(subtask.id, task.id)
                           }
                         }}
-                        disabled={isPastDate}
-                        className={`text-red-400 flex-shrink-0 ${isPastDate ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-600 cursor-pointer'}`}
-                        title={isPastDate ? 'Нельзя удалить подзадачу для прошлых дат' : 'Удалить подзадачу'}
+                        disabled={isPastDate || deletingSubtasks.has(subtask.id)}
+                        className={`text-red-400 flex-shrink-0 ${isPastDate || deletingSubtasks.has(subtask.id) ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-600 cursor-pointer'}`}
+                        title={isPastDate ? 'Нельзя удалить подзадачу для прошлых дат' : deletingSubtasks.has(subtask.id) ? 'Удаление...' : 'Удалить подзадачу'}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                           <path d="M3 6H5H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -1330,6 +1384,8 @@ function JournalPage() {
   const [editingNote, setEditingNote] = useState(null)
   const [editContent, setEditContent] = useState('')
   const [editMood, setEditMood] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
   const api = useMemo(() => createApiClient(initData), [initData])
 
@@ -1411,10 +1467,12 @@ function JournalPage() {
   }, [api])
 
   const createNote = async () => {
+    if (isCreating) return // Защита от множественных кликов
     if (!selectedMood) {
       alert('Пожалуйста, выберите настроение')
       return
     }
+    setIsCreating(true)
     try {
       const created = await api('/notes', {
         method: 'POST',
@@ -1434,6 +1492,8 @@ function JournalPage() {
     } catch (err) {
       console.error(err)
       alert('Не удалось добавить заметку')
+    } finally {
+      setIsCreating(false)
     }
   }
 
@@ -1455,11 +1515,13 @@ function JournalPage() {
   }
 
   const saveEdit = async () => {
+    if (isSaving) return // Защита от множественных кликов
     if (!editingNote) return
     if (!editMood) {
       alert('Пожалуйста, выберите настроение')
       return
     }
+    setIsSaving(true)
     const payload = {
       content: editContent.trim(),
       date: format(selectedDate, 'yyyy-MM-dd'),
@@ -1487,6 +1549,8 @@ function JournalPage() {
     } catch (err) {
       console.error(err)
       alert('Не удалось сохранить изменения')
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -1620,8 +1684,8 @@ function JournalPage() {
                             rows={4}
                           />
                           <div className="flex gap-3">
-                            <button onClick={saveEdit} disabled={!editMood} className="btn flex-1 disabled:opacity-50">
-                              Сохранить
+                            <button onClick={saveEdit} disabled={!editMood || isSaving} className="btn flex-1 disabled:opacity-50">
+                              {isSaving ? 'Сохранение...' : 'Сохранить'}
                             </button>
                             <button onClick={cancelEdit} className="btn-secondary flex-1">
                               Отмена
@@ -1680,13 +1744,13 @@ function JournalPage() {
                   <div className="flex gap-3">
                     <button
                       onClick={createNote}
-                      disabled={!selectedMood}
+                      disabled={!selectedMood || isCreating}
                       className="btn flex-1 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                         <path d="M19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H16L21 8V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      Сохранить
+                      {isCreating ? 'Сохранение...' : 'Сохранить'}
                     </button>
                     <button
                       onClick={cancelCreate}
