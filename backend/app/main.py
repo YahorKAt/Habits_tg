@@ -567,6 +567,21 @@ def add_note(payload: NoteCreate, db: Session = Depends(get_db), user_id: int = 
     return note
 
 
+@app.put("/notes/{note_id}")
+def update_note(note_id: int, payload: NoteCreate, db: Session = Depends(get_db), user_id: int = Depends(get_user_id)):
+    note = crud.update_note(
+        db,
+        note_id=note_id,
+        user_id=user_id,
+        content=payload.content,
+        date=payload.date,
+        mood=payload.mood
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return note
+
+
 @app.get("/notes")
 def list_notes(
     date: str = None, 

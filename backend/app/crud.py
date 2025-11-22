@@ -785,6 +785,20 @@ def get_notes_by_month(db: Session, user_id: int, year: int, month: int):
     return notes_by_date
 
 
+def update_note(db: Session, note_id: int, user_id: int, content: str, date: str, mood: str = None):
+    note = db.execute(
+        select(models.Note).where(models.Note.id == note_id, models.Note.user_id == user_id)
+    ).scalar_one_or_none()
+    if not note:
+        return None
+    note.content = content
+    note.date = date
+    note.mood = mood
+    db.commit()
+    db.refresh(note)
+    return note
+
+
 def delete_note(db: Session, note_id: int, user_id: int) -> bool:
     note = db.execute(
         select(models.Note).where(models.Note.id == note_id, models.Note.user_id == user_id)
