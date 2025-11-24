@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 
 from aiogram import Bot
-from ..repositories.user_repository import UserRepository
+from repositories.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 

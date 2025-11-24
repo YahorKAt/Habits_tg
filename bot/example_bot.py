@@ -11,9 +11,9 @@ from aiogram.utils import executor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from .config import BOT_TOKEN
-from .handlers.commands import register_handlers
-from .services.notification_service import NotificationService
+from config import BOT_TOKEN
+from handlers.commands import register_handlers
+from services.notification_service import NotificationService
 
 # Настройка логирования
 logging.basicConfig(

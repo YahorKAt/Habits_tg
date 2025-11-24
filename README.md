@@ -177,6 +177,4 @@ cd bot
 pip install -r requirements.txt
 set BOT_TOKEN=8294461897:AAEdrDJDWFPylUnv3P-dN60ImlQf1vrtr6A
 set WEBAPP_URL=https://every-adults-occur.loca.lt
-# Запуск из корня проекта (чтобы работали относительные импорты)
-cd ..
-python -m bot.example_bot
+python example_bot.py

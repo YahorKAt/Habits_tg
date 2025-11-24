@@ -5,7 +5,7 @@ from typing import List
 from types import SimpleNamespace
 import logging
 
-from ..db_utils import SessionLocal
+from db_utils import SessionLocal
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 

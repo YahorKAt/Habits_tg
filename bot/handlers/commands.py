@@ -5,8 +5,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import logging
 
-from ..config import WEBAPP_URL
-from ..services.notification_service import NotificationService
+from config import WEBAPP_URL
+from services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +40,8 @@ def register_handlers(dp: Dispatcher):
     @dp.message_handler(commands=["check_timezone"])
     async def check_timezone(message: types.Message):
         """Проверяет часовой пояс пользователя"""
-        from ..repositories.user_repository import UserRepository
-        from ..services.notification_service import parse_timezone_offset
+        from repositories.user_repository import UserRepository
+        from services.notification_service import parse_timezone_offset
         from datetime import datetime, timezone, timedelta
         
         user_id = message.from_user.id
