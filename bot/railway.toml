@@ -9,7 +9,7 @@ restartPolicyMaxRetries = 3
 
 [start]
 # Команда для запуска бота
-startCommand = "python example_bot.py"
+startCommand = "cd /app && python -m bot.example_bot"
 
 [env]
 PYTHON_VERSION = "3.11"

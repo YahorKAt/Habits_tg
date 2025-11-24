@@ -172,12 +172,11 @@ lt --port 5173
 
 ### 5. Bot
 ```bash
-# Option 1: Use batch file (recommended)
-run_bot.bat
-
-# Option 2: Manual setup
+# Manual setup
 cd bot
 pip install -r requirements.txt
 set BOT_TOKEN=8294461897:AAEdrDJDWFPylUnv3P-dN60ImlQf1vrtr6A
 set WEBAPP_URL=https://every-adults-occur.loca.lt
-python example_bot.py
+# Запуск из корня проекта (чтобы работали относительные импорты)
+cd ..
+python -m bot.example_bot

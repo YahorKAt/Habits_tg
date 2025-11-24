@@ -1,8 +1,8 @@
 """
 Сервис для генерации задач по расписанию
 """
-from sqlalchemy.orm import Session
-from sqlalchemy import select, joinedload
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import logging
