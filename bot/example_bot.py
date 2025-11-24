@@ -1,15 +1,19 @@
+"""
+Главный файл бота
+"""
 from dotenv import load_dotenv
 load_dotenv()
+
 import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+import logging
+from aiogram import Bot, Dispatcher
 from aiogram.utils import executor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-import os
-import logging
 
-from notifications import send_evening_notifications, send_morning_notifications
+from .config import BOT_TOKEN
+from .handlers.commands import register_handlers
+from .services.notification_service import NotificationService
 
 # Настройка логирования
 logging.basicConfig(
@@ -18,7 +22,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-# Отключаем лишние логи от aiogram и apscheduler
+# Отключаем лишние логи
 logging.getLogger('aiogram').setLevel(logging.WARNING)
 logging.getLogger('apscheduler').setLevel(logging.WARNING)
 logging.getLogger('aiogram.dispatcher').setLevel(logging.WARNING)
@@ -26,92 +30,23 @@ logging.getLogger('aiogram.bot').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()  # Убираем пробелы если они есть
-
-if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN не установлен в переменных окружения!")
-    exit(1)
-
-logger.info(f"🤖 Bot token: {BOT_TOKEN[:10]}...")
-if WEBAPP_URL:
-    logger.info(f"🌐 WebApp URL: {WEBAPP_URL}")
-else:
-    logger.warning("⚠️  WEBAPP_URL is not set!")
-
+# Инициализация бота
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher(bot)
 scheduler = AsyncIOScheduler()
 
-
-@dp.message_handler(commands=["start"]) 
-async def start(message: types.Message):
-    if not WEBAPP_URL:
-        await message.answer("ERROR: WEBAPP_URL is not configured. Please set it in environment variables.")
-        return
-    
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(InlineKeyboardButton(text="Open Habits Mini App", web_app=WebAppInfo(url=WEBAPP_URL)))
-    await message.answer("Open the Habits Mini App:", reply_markup=kb)
-
-
-@dp.message_handler(commands=["test_notification"])
-async def test_notification(message: types.Message):
-    """Тестовая команда для проверки отправки уведомлений"""
-    user_id = message.from_user.id
-    try:
-        await bot.send_message(chat_id=user_id, text="🧪 Тестовое уведомление работает!")
-        logger.info(f"✅ Test notification sent to user {user_id}")
-        await message.answer("✅ Тестовое уведомление отправлено!")
-    except Exception as e:
-        logger.error(f"❌ Failed to send test notification to user {user_id}: {e}")
-        await message.answer(f"❌ Ошибка отправки уведомления: {e}")
-
-
-@dp.message_handler(commands=["check_timezone"])
-async def check_timezone(message: types.Message):
-    """Проверяет часовой пояс пользователя"""
-    from db_utils import get_all_users_with_timezone
-    from notifications import parse_timezone_offset
-    from datetime import datetime, timezone, timedelta
-    
-    user_id = message.from_user.id
-    users = get_all_users_with_timezone()
-    
-    user = next((u for u in users if u.user_id == user_id), None)
-    
-    if user and user.timezone_offset:
-        # Вычисляем текущее время пользователя
-        offset_hours = parse_timezone_offset(user.timezone_offset)
-        user_tz = timezone(timedelta(hours=offset_hours))
-        now_utc = datetime.now(timezone.utc)
-        now_user_tz = now_utc.astimezone(user_tz)
-        
-        response = (
-            f"📍 Ваш часовой пояс: {user.timezone_offset}\n"
-            f"🕐 Текущее время (UTC): {now_utc.strftime('%H:%M:%S')}\n"
-            f"🕐 Ваше локальное время: {now_user_tz.strftime('%H:%M:%S')}\n"
-            f"📅 Уведомления приходят в:\n"
-            f"   • 9:00 (утро)\n"
-            f"   • 22:00 (вечер)"
-        )
-    else:
-        response = (
-            f"⚠️ Часовой пояс не сохранен в базе данных.\n"
-            f"Откройте Mini App, чтобы сохранить часовой пояс."
-        )
-    
-    await message.answer(response)
+# Регистрация обработчиков
+register_handlers(dp)
 
 
 async def run_evening_notifications():
     """Обертка для запуска вечерних уведомлений"""
-    await send_evening_notifications(bot)
+    await NotificationService.send_evening_notifications(bot)
 
 
 async def run_morning_notifications():
     """Обертка для запуска утренних уведомлений"""
-    await send_morning_notifications(bot)
+    await NotificationService.send_morning_notifications(bot)
 
 
 async def on_startup(_):
@@ -140,7 +75,6 @@ async def on_startup(_):
     
     scheduler.start()
     logger.info("✅ Планировщик уведомлений запущен")
-    
 
 
 async def on_shutdown(_):
@@ -163,7 +97,7 @@ if __name__ == "__main__":
     try:
         # Запускаем бота с callbacks для startup и shutdown
         executor.start_polling(
-            dp, 
+            dp,
             skip_updates=True,
             on_startup=on_startup,
             on_shutdown=on_shutdown
@@ -173,7 +107,3 @@ if __name__ == "__main__":
         if scheduler.running:
             scheduler.shutdown(wait=True)
         logger.info("✅ Бот остановлен")
-
-
-
-

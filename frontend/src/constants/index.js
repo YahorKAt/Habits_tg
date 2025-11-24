@@ -24,4 +24,3 @@ export const MOOD_OPTIONS = [
   { value: 'good', label: 'Хорошее' },
   { value: 'very_good', label: 'Отличное' }
 ]
-
