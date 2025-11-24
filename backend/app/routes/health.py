@@ -19,6 +19,7 @@ router = APIRouter()
 @router.get("/health")
 def health() -> JSONResponse:
     """Базовая проверка работоспособности API"""
+    logger.debug("🔍 Проверка работоспособности API (health check)")
     return JSONResponse({
         "status": "ok",
         "message": "API is running"
@@ -28,15 +29,17 @@ def health() -> JSONResponse:
 @router.get("/health/db")
 def health_db(db: Session = Depends(get_db)) -> JSONResponse:
     """Проверка подключения к базе данных"""
+    logger.info("🔍 Проверка подключения к базе данных...")
     try:
         db.execute(text("SELECT 1"))
         db.commit()
+        logger.info("✅ База данных доступна")
         return JSONResponse({
             "status": "ok",
             "database": "connected"
         })
     except Exception as e:
-        logger.error(f"Ошибка проверки базы данных: {e}")
+        logger.error(f"❌ Ошибка подключения к базе данных: {e}", exc_info=True)
         return JSONResponse({
             "status": "error",
             "database": "disconnected",
@@ -75,15 +78,17 @@ def health_full() -> JSONResponse:
 @router.post("/migrate")
 def run_migrations_endpoint(db: Session = Depends(get_db)) -> JSONResponse:
     """Ручной запуск миграций базы данных"""
+    logger.info("🔄 Запуск миграций базы данных...")
     try:
         from .. import migrations
         migrations.migrate_all(db)
+        logger.info("✅ Миграции успешно применены")
         return JSONResponse({
             "status": "ok",
             "message": "Migrations applied successfully"
         })
     except Exception as e:
-        logger.error(f"Ошибка миграции: {e}")
+        logger.error(f"❌ Ошибка применения миграций: {e}", exc_info=True)
         return JSONResponse({
             "status": "error",
             "message": str(e)

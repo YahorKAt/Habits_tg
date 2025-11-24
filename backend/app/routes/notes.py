@@ -3,12 +3,14 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import logging
 
 from ..database import get_db
 from ..dependencies import get_user_id
 from ..schemas import NoteCreate
 from ..repositories.note_repository import NoteRepository
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -19,6 +21,8 @@ def add_note(
     user_id: int = Depends(get_user_id)
 ):
     """Создает новую заметку"""
+    logger.info(f"📝 Получен запрос на создание заметки от пользователя {user_id} для даты {payload.date}")
+    logger.debug(f"   Настроение: {payload.mood}, длина текста: {len(payload.content)} символов")
     note = NoteRepository.create(
         db,
         user_id=user_id,
@@ -26,6 +30,7 @@ def add_note(
         date=payload.date,
         mood=payload.mood
     )
+    logger.info(f"✅ Заметка {note.id} успешно создана для пользователя {user_id}")
     return note
 
 
@@ -37,6 +42,7 @@ def update_note(
     user_id: int = Depends(get_user_id)
 ):
     """Обновляет заметку"""
+    logger.info(f"✏️  Получен запрос на обновление заметки {note_id} от пользователя {user_id}")
     note = NoteRepository.update(
         db,
         note_id=note_id,
@@ -46,7 +52,9 @@ def update_note(
         mood=payload.mood
     )
     if not note:
+        logger.warning(f"⚠️  Заметка {note_id} не найдена для обновления пользователем {user_id}")
         raise HTTPException(status_code=404, detail="Note not found")
+    logger.info(f"✅ Заметка {note_id} успешно обновлена пользователем {user_id}")
     return note
 
 
@@ -61,13 +69,20 @@ def list_notes(
     """Получает заметки"""
     # Если указан год и месяц - возвращаем все заметки за месяц
     if year is not None and month is not None:
+        logger.info(f"📋 Получен запрос на заметки за месяц {year}-{month:02d} от пользователя {user_id}")
         notes_dict = NoteRepository.get_by_month(db, user_id=user_id, year=year, month=month)
-        return list(notes_dict.values())
+        notes_list = list(notes_dict.values())
+        logger.info(f"✅ Возвращено {len(notes_list)} заметок за месяц для пользователя {user_id}")
+        return notes_list
     
     # Иначе возвращаем заметки за конкретную дату
     if date:
-        return NoteRepository.get_by_date(db, user_id=user_id, date=date)
+        logger.info(f"📋 Получен запрос на заметки за дату {date} от пользователя {user_id}")
+        notes = NoteRepository.get_by_date(db, user_id=user_id, date=date)
+        logger.info(f"✅ Возвращено {len(notes)} заметок за дату {date} для пользователя {user_id}")
+        return notes
     
+    logger.info(f"📋 Получен запрос на заметки без параметров от пользователя {user_id}")
     return []
 
 
@@ -78,8 +93,11 @@ def delete_note(
     user_id: int = Depends(get_user_id)
 ):
     """Удаляет заметку"""
+    logger.info(f"🗑️  Получен запрос на удаление заметки {note_id} от пользователя {user_id}")
     deleted = NoteRepository.delete(db, note_id=note_id, user_id=user_id)
     if not deleted:
+        logger.warning(f"⚠️  Заметка {note_id} не найдена для удаления пользователем {user_id}")
         raise HTTPException(status_code=404, detail="Note not found")
+    logger.info(f"✅ Заметка {note_id} успешно удалена пользователем {user_id}")
     return {"ok": True}
 

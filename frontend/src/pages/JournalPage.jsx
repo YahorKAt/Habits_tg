@@ -69,12 +69,16 @@ export default function JournalPage() {
   const api = useMemo(() => createApiClient(initData), [initData])
 
   const loadNotes = useCallback(async (date, showLoading = true) => {
+    console.log(`📋 [JournalPage] Загрузка заметок для даты:`, date)
     if (showLoading) {
       setLoading(true)
     }
     try {
       const data = await noteService.getNotesByDate(api, date)
       setNotes(data)
+      console.log(`✅ [JournalPage] Загружено ${data.length} заметок`)
+    } catch (error) {
+      console.error(`❌ [JournalPage] Ошибка загрузки заметок:`, error)
     } finally {
       if (showLoading) {
         setLoading(false)

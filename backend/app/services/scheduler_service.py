@@ -54,7 +54,9 @@ class SchedulerService:
         target_date_end = target_date + timedelta(days=1)
         
         if user_id:
-            logger.debug(f"Генерация задач для пользователя {user_id}, дата: {target_date.date()}")
+            logger.info(f"🔄 Генерация задач для пользователя {user_id}, дата: {target_date.date()}")
+        else:
+            logger.info(f"🔄 Генерация задач для всех пользователей, дата: {target_date.date()}")
         
         created_count = 0
         
@@ -67,8 +69,10 @@ class SchedulerService:
             ).scalars().all()
         
         if not all_user_ids:
-            logger.debug("Пользователи с задачами не найдены")
+            logger.info("ℹ️  Пользователи с задачами не найдены")
             return 0
+        
+        logger.info(f"📊 Найдено {len(all_user_ids)} пользователей для генерации задач")
         
         for user_id in all_user_ids:
             # Ищем все задачи предыдущего дня
@@ -84,8 +88,10 @@ class SchedulerService:
             ).unique().scalars().all()
             
             if len(source_tasks) == 0:
-                logger.debug(f"Пользователь {user_id}: задачи не найдены за {prev_date.date()}")
+                logger.debug(f"⏭️  Пользователь {user_id}: задачи не найдены за {prev_date.date()}")
                 continue
+            
+            logger.debug(f"📋 Пользователь {user_id}: найдено {len(source_tasks)} задач-источников за {prev_date.date()}")
             
             # Для каждой найденной задачи создаем новую задачу
             for source_task in source_tasks:
@@ -146,7 +152,9 @@ class SchedulerService:
         
         if created_count > 0:
             db.commit()
-            logger.debug(f"Создано {created_count} задач за {target_date.date()}")
+            logger.info(f"✅ Создано {created_count} задач за {target_date.date()}" + (f" для пользователя {user_id}" if user_id else " для всех пользователей"))
+        else:
+            logger.info(f"ℹ️  Задачи не созданы за {target_date.date()}" + (f" для пользователя {user_id}" if user_id else ""))
         
         return created_count
 

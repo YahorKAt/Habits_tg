@@ -38,10 +38,14 @@ export default function TasksPage({ onCreateTask, onEditTask, onTaskUpdated, onC
   const api = useMemo(() => createApiClient(initData), [initData])
 
   const loadTasks = useCallback(async (date = selectedDate) => {
+    console.log(`📋 [TasksPage] Загрузка задач для даты:`, date)
     setLoading(true)
     try {
       const data = await taskService.getTasksByDate(api, date)
       setTasks(data)
+      console.log(`✅ [TasksPage] Загружено ${data.length} задач`)
+    } catch (error) {
+      console.error(`❌ [TasksPage] Ошибка загрузки задач:`, error)
     } finally {
       setLoading(false)
     }

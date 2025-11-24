@@ -23,12 +23,14 @@ export default function StatisticsPage() {
   const api = useMemo(() => createApiClient(initData), [initData])
 
   const loadStats = useCallback(async (p) => {
+    console.log(`📊 [StatisticsPage] Загрузка статистики за период: ${p}`)
     setLoading(true)
     try {
       const data = await statisticsService.getStatistics(api, p)
       setStats(data)
+      console.log(`✅ [StatisticsPage] Статистика загружена:`, data)
     } catch (error) {
-      console.error('Error loading stats:', error)
+      console.error(`❌ [StatisticsPage] Ошибка загрузки статистики:`, error)
       setStats({
         completed: 0,
         in_progress: 0,
@@ -41,11 +43,13 @@ export default function StatisticsPage() {
   }, [api])
 
   const loadHabitsStats = useCallback(async () => {
+    console.log(`📊 [StatisticsPage] Загрузка статистики по привычкам`)
     try {
       const data = await statisticsService.getHabitsStatistics(api)
       setHabitsStats(data)
+      console.log(`✅ [StatisticsPage] Статистика по привычкам загружена: ${data.length} привычек`)
     } catch (error) {
-      console.error('Error loading habits stats:', error)
+      console.error(`❌ [StatisticsPage] Ошибка загрузки статистики по привычкам:`, error)
       setHabitsStats([])
     }
   }, [api])

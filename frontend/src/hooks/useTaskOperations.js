@@ -22,9 +22,16 @@ export const useTaskOperations = (apiClient) => {
    * Переключает статус выполнения задачи
    */
   const toggleTask = useCallback(async (task, isPastDate, onTaskUpdate) => {
-    if (togglingTasks.has(task.id)) return
-    if (isPastDate) return
+    if (togglingTasks.has(task.id)) {
+      console.log(`⏸️  [useTaskOperations] Переключение задачи ${task.id} уже выполняется, пропуск`)
+      return
+    }
+    if (isPastDate) {
+      console.log(`⏸️  [useTaskOperations] Задача ${task.id} для прошлой даты, пропуск`)
+      return
+    }
 
+    console.log(`🔄 [useTaskOperations] Переключение статуса задачи ${task.id} (текущий: ${task.completed ? 'выполнено' : 'не выполнено'})`)
     setTogglingTasks(prev => new Set(prev).add(task.id))
     const updateVersion = Date.now()
     taskUpdateVersionsRef.current.set(task.id, updateVersion)
@@ -60,8 +67,9 @@ export const useTaskOperations = (apiClient) => {
       } else {
         onTaskUpdate(updated)
       }
+      console.log(`✅ [useTaskOperations] Задача ${task.id} успешно переключена`)
     } catch (error) {
-      console.error('Error toggling task:', error)
+      console.error(`❌ [useTaskOperations] Ошибка переключения задачи ${task.id}:`, error)
       const currentVersion = taskUpdateVersionsRef.current.get(task.id)
       if (currentVersion === updateVersion) {
         onTaskUpdate({ ...task, completed: !newCompletedState })
@@ -79,16 +87,24 @@ export const useTaskOperations = (apiClient) => {
    * Удаляет задачу
    */
   const deleteTask = useCallback(async (task, isPastDate, onTaskDelete) => {
-    if (deletingTasks.has(task.id)) return
-    if (isPastDate) return
+    if (deletingTasks.has(task.id)) {
+      console.log(`⏸️  [useTaskOperations] Удаление задачи ${task.id} уже выполняется, пропуск`)
+      return
+    }
+    if (isPastDate) {
+      console.log(`⏸️  [useTaskOperations] Задача ${task.id} для прошлой даты, пропуск`)
+      return
+    }
 
+    console.log(`🗑️  [useTaskOperations] Удаление задачи ${task.id}`)
     setDeletingTasks(prev => new Set(prev).add(task.id))
 
     try {
       await taskService.deleteTask(apiClient, task.id)
       onTaskDelete(task.id)
+      console.log(`✅ [useTaskOperations] Задача ${task.id} успешно удалена`)
     } catch (error) {
-      console.error('Error deleting task:', error)
+      console.error(`❌ [useTaskOperations] Ошибка удаления задачи ${task.id}:`, error)
     } finally {
       setDeletingTasks(prev => {
         const next = new Set(prev)

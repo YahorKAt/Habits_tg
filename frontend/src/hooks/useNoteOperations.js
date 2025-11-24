@@ -17,14 +17,19 @@ export const useNoteOperations = (apiClient) => {
    * Создает новую заметку
    */
   const createNote = useCallback(async (noteData, onSuccess) => {
-    if (isCreating) return
+    if (isCreating) {
+      console.log('⏸️  [useNoteOperations] Создание заметки уже выполняется, пропуск')
+      return
+    }
 
+    console.log('📝 [useNoteOperations] Создание заметки для даты:', noteData.date)
     setIsCreating(true)
     try {
       const created = await noteService.createNote(apiClient, noteData)
       onSuccess(created)
+      console.log('✅ [useNoteOperations] Заметка успешно создана:', created.id)
     } catch (error) {
-      console.error('Error creating note:', error)
+      console.error('❌ [useNoteOperations] Ошибка создания заметки:', error)
       throw error
     } finally {
       setIsCreating(false)
@@ -35,14 +40,19 @@ export const useNoteOperations = (apiClient) => {
    * Обновляет существующую заметку
    */
   const updateNote = useCallback(async (noteId, noteData, onSuccess) => {
-    if (isSaving) return
+    if (isSaving) {
+      console.log('⏸️  [useNoteOperations] Обновление заметки уже выполняется, пропуск')
+      return
+    }
 
+    console.log(`✏️  [useNoteOperations] Обновление заметки ${noteId}`)
     setIsSaving(true)
     try {
       const updated = await noteService.updateNote(apiClient, noteId, noteData)
       onSuccess(updated)
+      console.log(`✅ [useNoteOperations] Заметка ${noteId} успешно обновлена`)
     } catch (error) {
-      console.error('Error updating note:', error)
+      console.error(`❌ [useNoteOperations] Ошибка обновления заметки ${noteId}:`, error)
       throw error
     } finally {
       setIsSaving(false)
@@ -53,11 +63,13 @@ export const useNoteOperations = (apiClient) => {
    * Удаляет заметку
    */
   const deleteNote = useCallback(async (noteId, onSuccess) => {
+    console.log(`🗑️  [useNoteOperations] Удаление заметки ${noteId}`)
     try {
       await noteService.deleteNote(apiClient, noteId)
       onSuccess(noteId)
+      console.log(`✅ [useNoteOperations] Заметка ${noteId} успешно удалена`)
     } catch (error) {
-      console.error('Error deleting note:', error)
+      console.error(`❌ [useNoteOperations] Ошибка удаления заметки ${noteId}:`, error)
       throw error
     }
   }, [apiClient])

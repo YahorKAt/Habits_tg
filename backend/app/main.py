@@ -91,7 +91,7 @@ def generate_tasks_job():
                 users_dict[user_id] = temp_user
         
         if not users:
-            logger.debug("Пользователи не найдены")
+            logger.info("ℹ️  Пользователи не найдены для генерации задач")
             db.close()
             return
         
@@ -128,16 +128,18 @@ def generate_tasks_job():
                     )
                     total_created += count
                     if count > 0:
-                        logger.info(f"✅ Создано {count} задач для пользователя {user.user_id} (часовой пояс {user.timezone_offset})")
+                        logger.info(f"✅ Создано {count} задач для пользователя {user.user_id} (часовой пояс {user.timezone_offset}, локальное время: {now_user_tz.strftime('%H:%M')})")
+                    else:
+                        logger.debug(f"⏭️  Задачи не созданы для пользователя {user.user_id} (локальное время: {now_user_tz.strftime('%H:%M')}, не 00:00)")
                     
             except Exception as e:
                 logger.error(f"❌ Ошибка генерации задач для пользователя {user.user_id}: {e}")
                 continue
         
         if total_created > 0:
-            logger.info(f"📋 Всего создано {total_created} задач для {len(users)} пользователей")
+            logger.info(f"✅ Всего создано {total_created} задач для {len(users)} пользователей")
         else:
-            logger.debug(f"⏭️  Задачи не созданы (проверено {len(users)} пользователей)")
+            logger.info(f"ℹ️  Задачи не созданы (проверено {len(users)} пользователей)")
             
     except Exception as e:
         logger.error(f"❌ Ошибка в задаче генерации задач: {e}")
@@ -149,9 +151,15 @@ def generate_tasks_job():
 def on_startup() -> None:
     """Инициализация приложения при запуске"""
     try:
-        logger.info("🚀 Запуск приложения...")
-        init_db()
+        logger.info("=" * 60)
+        logger.info("🚀 Начало запуска FastAPI приложения...")
+        logger.info("=" * 60)
         
+        logger.info("📊 Инициализация базы данных...")
+        init_db()
+        logger.info("✅ База данных инициализирована")
+        
+        logger.info("⏰ Настройка планировщика задач...")
         # Настраиваем планировщик для генерации задач каждый час
         scheduler.add_job(
             generate_tasks_job,
@@ -162,15 +170,24 @@ def on_startup() -> None:
         )
         scheduler.start()
         logger.info("✅ Планировщик запущен - задачи создаются в 00:00 по локальному времени каждого пользователя")
-        logger.info("✅ Приложение успешно запущено")
+        logger.info("=" * 60)
+        logger.info("✅ Приложение успешно запущено и готово к работе")
+        logger.info("=" * 60)
     except Exception as e:
-        logger.error(f"❌ Не удалось запустить приложение: {e}")
+        logger.error(f"❌ Критическая ошибка при запуске приложения: {e}", exc_info=True)
         raise
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
     """Остановка приложения при выключении"""
+    logger.info("=" * 60)
+    logger.info("🛑 Начало остановки приложения...")
+    logger.info("=" * 60)
     if scheduler.running:
+        logger.info("⏹️  Остановка планировщика задач...")
         scheduler.shutdown()
         logger.info("✅ Планировщик остановлен")
+    else:
+        logger.info("ℹ️  Планировщик уже был остановлен")
+    logger.info("✅ Приложение успешно остановлено")

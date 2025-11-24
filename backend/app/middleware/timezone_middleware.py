@@ -39,14 +39,15 @@ class TimezoneMiddleware(BaseHTTPMiddleware):
                                     db = next(get_db())
                                     try:
                                         UserRepository.update_timezone(db, user_id, offset_formatted)
+                                        logger.debug(f"🌍 Часовой пояс {offset_formatted} сохранен для пользователя {user_id}")
                                     except Exception as e:
-                                        logger.debug(f"Не удалось сохранить часовой пояс для пользователя {user_id}: {e}")
+                                        logger.warning(f"⚠️  Не удалось сохранить часовой пояс для пользователя {user_id}: {e}")
                                     finally:
                                         db.close()
                         except (ValueError, AttributeError) as e:
-                            logger.debug(f"Не удалось распарсить время клиента: {e}")
+                            logger.debug(f"⚠️  Не удалось распарсить время клиента: {e}")
             except Exception as e:
-                logger.debug(f"Не удалось сохранить часовой пояс: {e}")
+                logger.debug(f"⚠️  Не удалось сохранить часовой пояс: {e}")
         
         return response
 
