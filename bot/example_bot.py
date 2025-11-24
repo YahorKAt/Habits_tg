@@ -61,7 +61,8 @@ async def on_startup(_):
         trigger=CronTrigger(minute=0),  # Каждый час в 00 минут
         id='evening_notifications',
         name='Send evening notifications at 22:00 user time',
-        replace_existing=True
+        replace_existing=True,
+        misfire_grace_time=60  # Разрешаем задержку до 60 секунд
     )
     
     # Утренние уведомления (9:00 по времени пользователя)
@@ -70,7 +71,8 @@ async def on_startup(_):
         trigger=CronTrigger(minute=0),  # Каждый час в 00 минут
         id='morning_notifications',
         name='Send morning notifications at 9:00 user time',
-        replace_existing=True
+        replace_existing=True,
+        misfire_grace_time=60  # Разрешаем задержку до 60 секунд
     )
     
     scheduler.start()
